@@ -1,0 +1,37 @@
+#!/bin/bash
+
+echo "Running pre-commit checks..."
+
+# Format code
+echo "Formatting Swift code..."
+swift-format -i -r Sources/ Tests/
+
+# Run SwiftLint
+if which swiftlint >/dev/null; then
+    echo "Running SwiftLint..."
+    swiftlint --strict
+    if [ $? -ne 0 ]; then
+        echo "❌ SwiftLint found issues. Please fix them before committing."
+        exit 1
+    fi
+else
+    echo "⚠️  SwiftLint not installed. Install with: brew install swiftlint"
+fi
+
+# Run tests
+echo "Running tests..."
+swift test
+if [ $? -ne 0 ]; then
+    echo "❌ Tests failed. Please fix them before committing."
+    exit 1
+fi
+
+# Build the project
+echo "Building project..."
+swift build
+if [ $? -ne 0 ]; then
+    echo "❌ Build failed. Please fix errors before committing."
+    exit 1
+fi
+
+echo "✅ All pre-commit checks passed!"

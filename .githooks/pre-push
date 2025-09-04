@@ -1,0 +1,35 @@
+#!/bin/bash
+
+echo "Running pre-push checks..."
+
+# Run full test suite
+echo "Running full test suite..."
+swift test --parallel
+if [ $? -ne 0 ]; then
+    echo "❌ Tests failed. Please fix them before pushing."
+    exit 1
+fi
+
+# Check for build warnings
+echo "Checking for build warnings..."
+swift build -Xswiftc -warnings-as-errors 2>&1 | tee build.log
+if grep -q "warning:" build.log; then
+    echo "❌ Build has warnings. Please fix them before pushing."
+    rm build.log
+    exit 1
+fi
+rm -f build.log
+
+# Verify documentation builds
+echo "Verifying documentation..."
+if which swift-doc >/dev/null; then
+    swift doc generate Sources --module-name SwiftIP2ASN --output .docs
+    if [ $? -ne 0 ]; then
+        echo "⚠️  Documentation generation failed."
+    fi
+    rm -rf .docs
+else
+    echo "ℹ️  swift-doc not installed. Skipping documentation check."
+fi
+
+echo "✅ All pre-push checks passed!"
