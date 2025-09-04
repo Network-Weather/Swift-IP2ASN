@@ -37,7 +37,7 @@ final class FullBGPTest: XCTestCase {
             ("23.185.0.2", "Akamai"),
             ("140.82.114.4", "GitHub"),
             ("52.84.228.25", "Amazon CloudFront"),
-            ("93.184.216.34", "Example.com"),
+            ("93.184.216.34", "Example.com")
         ]
 
         for (ip, description) in testIPs {

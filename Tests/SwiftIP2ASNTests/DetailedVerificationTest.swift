@@ -21,7 +21,7 @@ final class DetailedVerificationTest: XCTestCase {
 
             // Case 4: Your requested IPs with discrepancies
             ("204.141.42.155", "AS2639", "ZOHO", "BGP shows AS2914 (NTT), expected AS2639"),
-            ("180.222.119.247", "AS10230", "Yahoo-SG", "BGP shows AS4713 (OCN/NTT), expected AS10230"),
+            ("180.222.119.247", "AS10230", "Yahoo-SG", "BGP shows AS4713 (OCN/NTT), expected AS10230")
         ]
 
         print("📊 Verification Results:")
@@ -115,7 +115,7 @@ final class DetailedVerificationTest: XCTestCase {
             ("204.141.42.155", 2914),  // Now NTT
             ("180.222.119.247", 4713),  // Now OCN/NTT
             ("157.240.22.35", 32934),  // Facebook
-            ("17.253.144.10", 714),  // Apple
+            ("17.253.144.10", 714)  // Apple
         ]
 
         for (ip, expectedASN) in testIPs {
@@ -133,7 +133,7 @@ final class DetailedVerificationTest: XCTestCase {
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = [
             "-c",
-            "gunzip -c /tmp/ip2asn-v4.tsv.gz | awk -F'\\t' -v ip='\(ip)' '$1 <= ip && $2 >= ip { print $3; exit }'",
+            "gunzip -c /tmp/ip2asn-v4.tsv.gz | awk -F'\\t' -v ip='\(ip)' '$1 <= ip && $2 >= ip { print $3; exit }'"
         ]
 
         let pipe = Pipe()

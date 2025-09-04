@@ -33,7 +33,7 @@ final class ValidationTest: XCTestCase {
                     ("8.8.8.8", "Google DNS", "arin"),
                     ("52.94.76.0", "AWS Virginia", "arin"),
                     ("142.59.0.0", "Bell Canada", "arin"),
-                    ("23.185.0.2", "Akamai CDN", "arin"),
+                    ("23.185.0.2", "Akamai CDN", "arin")
                 ]
             ),
 
@@ -43,7 +43,7 @@ final class ValidationTest: XCTestCase {
                     ("185.60.216.35", "OpenDNS Europe", "ripencc"),
                     ("91.198.174.192", "Wikimedia", "ripencc"),
                     ("185.15.56.0", "OVH France", "ripencc"),
-                    ("193.222.51.0", "CERN", "ripencc"),
+                    ("193.222.51.0", "CERN", "ripencc")
                 ]
             ),
 
@@ -54,7 +54,7 @@ final class ValidationTest: XCTestCase {
                     ("110.33.0.0", "Telstra Australia", "apnic"),
                     ("133.11.0.0", "Univ Tokyo", "apnic"),
                     ("202.108.0.0", "China Unicom", "apnic"),
-                    ("103.87.124.0", "India ISP", "apnic"),
+                    ("103.87.124.0", "India ISP", "apnic")
                 ]
             ),
 
@@ -64,7 +64,7 @@ final class ValidationTest: XCTestCase {
                     ("200.160.0.0", "Brazil", "lacnic"),
                     ("187.141.0.0", "Mexico", "lacnic"),
                     ("190.210.0.0", "Argentina", "lacnic"),
-                    ("200.27.0.0", "Chile", "lacnic"),
+                    ("200.27.0.0", "Chile", "lacnic")
                 ]
             ),
 
@@ -74,9 +74,9 @@ final class ValidationTest: XCTestCase {
                     ("196.32.0.0", "South Africa", "afrinic"),
                     ("196.219.0.0", "Egypt", "afrinic"),
                     ("197.136.0.0", "Kenya", "afrinic"),
-                    ("41.0.0.0", "African block", "afrinic"),
+                    ("41.0.0.0", "African block", "afrinic")
                 ]
-            ),
+            )
         ]
 
         var successCount = 0
@@ -126,7 +126,7 @@ final class ValidationTest: XCTestCase {
             ("2001:67c::", "RIPE IPv6", "ripencc"),
             ("2001:200::", "APNIC IPv6", "apnic"),
             ("2800::", "LACNIC IPv6", "lacnic"),
-            ("2001:4200::", "AFRINIC IPv6", "afrinic"),
+            ("2001:4200::", "AFRINIC IPv6", "afrinic")
         ]
 
         for (ip, description, expectedRegistry) in ipv6Tests {

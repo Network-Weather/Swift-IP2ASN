@@ -204,7 +204,7 @@ final class DatabaseFormatTest: XCTestCase {
             ("8.8.8.8", UInt32(15169)),  // Google
             ("1.1.1.1", UInt32(13335)),  // Cloudflare
             ("140.82.121.3", UInt32(36459)),  // GitHub
-            ("157.240.22.35", UInt32(32934)),  // Facebook
+            ("157.240.22.35", UInt32(32934))  // Facebook
         ]
 
         print("\n🎯 Lookup Tests:")

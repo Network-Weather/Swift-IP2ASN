@@ -69,7 +69,7 @@ final class UltraCompactValidationTest: XCTestCase {
             ("1.0.0.1", UInt32(13335), "CLOUDFLARE"),
             ("8.8.8.8", UInt32(15169), "GOOGLE"),
             ("140.82.121.3", UInt32(36459), "GITHUB"),
-            ("157.240.22.35", UInt32(32934), "FACEBOOK"),
+            ("157.240.22.35", UInt32(32934), "FACEBOOK")
         ]
 
         var knownPassed = 0
@@ -97,7 +97,7 @@ final class UltraCompactValidationTest: XCTestCase {
         var notFound = 0
         let sampleSize = 1000
 
-        for i in 0..<sampleSize {
+        for index in 0..<sampleSize {
             // Pick a random range
             let randomRange = originalLookup[Int.random(in: 0..<originalLookup.count)]
 
@@ -127,8 +127,8 @@ final class UltraCompactValidationTest: XCTestCase {
             }
 
             // Progress indicator
-            if (i + 1) % 100 == 0 {
-                print("  Tested \(i + 1)/\(sampleSize) IPs...")
+            if (index + 1) % 100 == 0 {
+                print("  Tested \(index + 1)/\(sampleSize) IPs...")
             }
         }
 
@@ -145,8 +145,8 @@ final class UltraCompactValidationTest: XCTestCase {
         print("\n✅ Test 3: Boundary Conditions")
         print(String(repeating: "-", count: 40))
 
-        for i in 0..<min(100, originalLookup.count) {
-            let range = originalLookup[i]
+        for index in 0..<min(100, originalLookup.count) {
+            let range = originalLookup[index]
 
             // Test start boundary
             let startIP = uint32ToIP(range.start)

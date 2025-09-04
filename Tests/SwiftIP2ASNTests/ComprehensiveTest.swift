@@ -65,7 +65,7 @@ final class ComprehensiveTest: XCTestCase {
 
             // IPs that should NOT be found (not in our sample data)
             ("192.168.1.1", 0, "Private IP - not in BGP"),
-            ("10.0.0.1", 0, "Private IP - not in BGP"),
+            ("10.0.0.1", 0, "Private IP - not in BGP")
         ]
 
         var successCount = 0

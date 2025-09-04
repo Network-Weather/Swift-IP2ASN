@@ -50,9 +50,9 @@ final class OverlapValidationTest: XCTestCase {
 
         // Check for overlaps
         var overlaps: [(String, String)] = []
-        for i in 0..<ranges.count - 1 {
-            let current = ranges[i]
-            let next = ranges[i + 1]
+        for index in 0..<ranges.count - 1 {
+            let current = ranges[index]
+            let next = ranges[index + 1]
 
             // Check if current range overlaps with next
             if current.end >= next.start {
@@ -77,9 +77,9 @@ final class OverlapValidationTest: XCTestCase {
         print("\n📈 Checking for gaps between ranges...")
 
         var gaps: [(String, String, UInt32)] = []
-        for i in 0..<min(20, ranges.count - 1) {  // Check first 20 for gaps
-            let current = ranges[i]
-            let next = ranges[i + 1]
+        for index in 0..<min(20, ranges.count - 1) {  // Check first 20 for gaps
+            let current = ranges[index]
+            let next = ranges[index + 1]
 
             if current.end + 1 < next.start {
                 let gapSize = next.start - current.end - 1
@@ -162,7 +162,7 @@ final class OverlapValidationTest: XCTestCase {
                     print count, overlaps, maxSize, minSize, nonPower2
                 }
                 '
-            """,
+            """
         ]
 
         let pipe = Pipe()
@@ -191,11 +191,11 @@ final class OverlapValidationTest: XCTestCase {
     }
 
     private func uint32ToIP(_ value: UInt32) -> String {
-        let a = (value >> 24) & 0xFF
-        let b = (value >> 16) & 0xFF
-        let c = (value >> 8) & 0xFF
-        let d = value & 0xFF
-        return "\(a).\(b).\(c).\(d)"
+        let octet1 = (value >> 24) & 0xFF
+        let octet2 = (value >> 16) & 0xFF
+        let octet3 = (value >> 8) & 0xFF
+        let octet4 = value & 0xFF
+        return "\(octet1).\(octet2).\(octet3).\(octet4)"
     }
 
     enum TestError: Error {

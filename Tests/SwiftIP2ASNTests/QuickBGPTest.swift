@@ -7,22 +7,15 @@ final class QuickBGPTest: XCTestCase {
     func testQuickBGPParse() async throws {
         print("\n🧪 Quick test of BGP data parsing...")
 
-        // Use the already downloaded file
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/gunzip")
-        process.arguments = ["-c", "/tmp/ip2asn-v4.tsv.gz"]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-
-        try process.run()
-        process.waitUntilExit()
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let content = String(data: data, encoding: .utf8) else {
-            XCTFail("Failed to decompress")
-            return
-        }
+        // Use test data instead of decompressing large file
+        // For a real test, we should use a small test fixture
+        let testData = """
+            1.0.0.0\t1.0.0.255\t13335\tUS\tCLOUDFLARENET
+            8.8.8.0\t8.8.8.255\t15169\tUS\tGOOGLE
+            140.82.112.0\t140.82.127.255\t36459\tUS\tGITHUB
+            157.240.0.0\t157.240.255.255\t32934\tUS\tFACEBOOK
+            """
+        let content = testData
 
         print("Decompressed data: \(content.count) characters")
 
@@ -31,8 +24,8 @@ final class QuickBGPTest: XCTestCase {
 
         // Show first 10 lines
         print("\nFirst 10 lines:")
-        for (i, line) in lines.prefix(10).enumerated() {
-            print("\(i+1): \(line)")
+        for (index, line) in lines.prefix(10).enumerated() {
+            print("\(index+1): \(line)")
         }
 
         // Look for our test IPs

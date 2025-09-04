@@ -32,7 +32,7 @@ final class BGPIntegrationTest: XCTestCase {
             ("1.1.1.1", 13335, "Cloudflare"),
             ("52.94.76.0", 16509, "Amazon"),
             ("13.64.0.0", 8075, "Microsoft"),
-            ("157.240.1.1", 32934, "Facebook"),
+            ("157.240.1.1", 32934, "Facebook")
         ]
 
         print("\n🔍 Verifying ASN lookups return actual ASN values (not 0):")

@@ -225,10 +225,10 @@ public struct BGPDataParser: Sendable {
         return (UInt32(bytes[0]) << 24) | (UInt32(bytes[1]) << 16) | (UInt32(bytes[2]) << 8) | UInt32(bytes[3])
     }
 
-    private func isPowerOfTwo(_ n: UInt32) -> Bool {
+    private func isPowerOfTwo(_ number: UInt32) -> Bool {
         // A number is a power of 2 if it has exactly one bit set
-        // This can be checked with n & (n - 1) == 0 (and n != 0)
-        return n != 0 && (n & (n - 1)) == 0
+        // This can be checked with number & (number - 1) == 0 (and number != 0)
+        return number != 0 && (number & (number - 1)) == 0
     }
 
     private func calculatePrefixLength(rangeSize: UInt32, startAddr: UInt32) -> Int {

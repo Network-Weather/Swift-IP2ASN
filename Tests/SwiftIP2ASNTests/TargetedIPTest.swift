@@ -38,7 +38,7 @@ final class TargetedIPTest: XCTestCase {
             ("180.222.119.247", 45595, "Pakistan Telecom"),
             ("57.144.220.1", 32934, "Facebook"),
             ("8.8.8.8", 15169, "Google"),
-            ("1.1.1.1", 13335, "Cloudflare"),
+            ("1.1.1.1", 13335, "Cloudflare")
         ]
 
         print("\n🔍 Testing IP lookups:")

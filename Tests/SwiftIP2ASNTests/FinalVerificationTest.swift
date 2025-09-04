@@ -44,7 +44,7 @@ final class FinalVerificationTest: XCTestCase {
             ("157.240.1.1", "Another Facebook IP"),
             ("31.13.24.1", "Facebook"),
             ("142.250.80.46", "Google"),
-            ("104.16.132.229", "Cloudflare"),
+            ("104.16.132.229", "Cloudflare")
         ]
 
         var allCorrect = true

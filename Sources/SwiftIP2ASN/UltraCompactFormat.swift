@@ -26,13 +26,13 @@ public struct UltraCompactFormat {
     /// - Larger: 4 bytes
     public static func encodeVarint(_ value: UInt32) -> Data {
         var data = Data()
-        var v = value
+        var current = value
 
-        while v >= 0x80 {
-            data.append(UInt8((v & 0x7F) | 0x80))
-            v >>= 7
+        while current >= 0x80 {
+            data.append(UInt8((current & 0x7F) | 0x80))
+            current >>= 7
         }
-        data.append(UInt8(v))
+        data.append(UInt8(current))
 
         return data
     }
@@ -102,8 +102,8 @@ public struct UltraCompactFormat {
         var prevEnd: UInt32 = 0
         var stats = (contiguous: 0, gaps: 0, totalBytes: 0)
 
-        for (i, range) in ranges.enumerated() {
-            if i == 0 {
+        for (index, range) in ranges.enumerated() {
+            if index == 0 {
                 // First range: store full start IP
                 data.append(contentsOf: withUnsafeBytes(of: range.start.bigEndian) { Data($0) })
                 stats.totalBytes += 4
@@ -220,8 +220,8 @@ public class UltraCompactDatabase {
         var currentIP: UInt32 = 0
 
         // Decode ranges
-        for i in 0..<rangeCount {
-            if i == 0 {
+        for index in 0..<rangeCount {
+            if index == 0 {
                 // First range has full start IP
                 currentIP = data[offset..<offset + 4].withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
                 offset += 4

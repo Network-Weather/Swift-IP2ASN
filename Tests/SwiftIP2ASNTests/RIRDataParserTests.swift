@@ -96,7 +96,7 @@ final class RIRDataParserTests: XCTestCase {
         let data: [RIR: String] = [
             .arin: "arin|US|ipv4|8.0.0.0|256|20000101|allocated|12345",
             .ripe: "ripencc|NL|ipv4|5.0.0.0|256|20000101|allocated|67890",
-            .apnic: "apnic|JP|ipv6|2001:200::|32|20000101|allocated|64512",
+            .apnic: "apnic|JP|ipv6|2001:200::|32|20000101|allocated|64512"
         ]
 
         let allocations = parser.parseAll(data)

@@ -19,7 +19,7 @@ final class PowerOfTwoValidationTest: XCTestCase {
 
             // Test edge cases
             ("10.0.0.0", "10.0.0.0", 1, true),  // Single IP (/32)
-            ("192.168.0.0", "192.168.0.127", 128, true),  // /25
+            ("192.168.0.0", "192.168.0.127", 128, true)  // /25
 
             // Invalid examples (if any exist in the data, we'll catch them)
         ]

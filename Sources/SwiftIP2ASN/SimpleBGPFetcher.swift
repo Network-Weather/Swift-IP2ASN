@@ -94,7 +94,7 @@ public struct SimpleBGPFetcher: Sendable {
             ("2600:1f00::/24", 16509, "AMAZON-02 - Amazon.com, Inc."),
             ("2606:4700::/32", 13335, "CLOUDFLARENET - Cloudflare, Inc."),
             ("2620:0:1c00::/40", 32934, "FACEBOOK - Meta Platforms, Inc."),
-            ("2a03:2880::/29", 32934, "FACEBOOK - Meta Platforms, Inc."),
+            ("2a03:2880::/29", 32934, "FACEBOOK - Meta Platforms, Inc.")
         ]
     }
 }

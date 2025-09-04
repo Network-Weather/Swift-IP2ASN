@@ -60,7 +60,7 @@ final class ExtendedIPTest: XCTestCase {
             ("198.51.100.1", "Documentation IP"),
             ("93.184.216.34", "Example.com"),
             ("45.60.121.1", "Hosting provider"),
-            ("185.125.190.36", "European hosting"),
+            ("185.125.190.36", "European hosting")
         ]
 
         var found = 0

@@ -50,7 +50,7 @@ final class RandomIPVerificationTest: XCTestCase {
 
             // Your specific requests
             "204.141.42.155",  // ZOHO
-            "180.222.119.247",  // Yahoo Singapore
+            "180.222.119.247"  // Yahoo Singapore
         ]
 
         // First, let's check these against the real database
@@ -71,7 +71,7 @@ final class RandomIPVerificationTest: XCTestCase {
             "17.253.144.10",  // Apple
             "104.18.33.221",  // Cloudflare
             "52.94.236.248",  // Amazon
-            "204.141.42.155",  // Your requested IP
+            "204.141.42.155"  // Your requested IP
         ]
 
         for ip in sampleIPs {
@@ -113,7 +113,7 @@ final class RandomIPVerificationTest: XCTestCase {
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = [
             "-c",
-            "gunzip -c /tmp/ip2asn-v4.tsv.gz | awk -F'\\t' -v ip='\(ip)' '$1 <= ip && $2 >= ip { print $0; exit }'",
+            "gunzip -c /tmp/ip2asn-v4.tsv.gz | awk -F'\\t' -v ip='\(ip)' '$1 <= ip && $2 >= ip { print $0; exit }'"
         ]
 
         let pipe = Pipe()
@@ -159,12 +159,10 @@ final class RandomIPVerificationTest: XCTestCase {
 
     private func extractField(from whois: String, field: String) -> String? {
         let lines = whois.split(separator: "\n")
-        for line in lines {
-            if line.contains(field) {
-                let parts = line.split(separator: ":")
-                if parts.count >= 2 {
-                    return parts[1...].joined(separator: ":").trimmingCharacters(in: .whitespaces)
-                }
+        for line in lines where line.contains(field) {
+            let parts = line.split(separator: ":")
+            if parts.count >= 2 {
+                return parts[1...].joined(separator: ":").trimmingCharacters(in: .whitespaces)
             }
         }
         return nil

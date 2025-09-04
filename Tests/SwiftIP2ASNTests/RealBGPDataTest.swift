@@ -32,7 +32,7 @@ final class RealBGPDataTest: XCTestCase {
                 "180.222.119.247",
                 "57.144.220.1",  // Facebook
                 "8.8.8.8",  // Google
-                "1.1.1.1",  // Cloudflare
+                "1.1.1.1"  // Cloudflare
             ]
 
             for ip in testIPs {
@@ -93,8 +93,8 @@ final class RealBGPDataTest: XCTestCase {
 
             // Show first 10 entries
             print("\nFirst 10 entries:")
-            for (i, (range, asn, name)) in mappings.prefix(10).enumerated() {
-                print("\(i+1). Range → AS\(asn) (\(name))")
+            for (index, (range, asn, name)) in mappings.prefix(10).enumerated() {
+                print("\(index+1). Range → AS\(asn) (\(name))")
             }
 
             XCTAssertGreaterThan(mappings.count, 0, "Should parse at least some mappings")

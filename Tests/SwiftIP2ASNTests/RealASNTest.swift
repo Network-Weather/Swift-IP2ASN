@@ -32,7 +32,7 @@ final class RealASNTest: XCTestCase {
             ("52.94.76.0", 16509, "Amazon"),
             ("13.64.0.0", 8075, "Microsoft"),
             ("157.240.1.1", 32934, "Facebook"),
-            ("31.13.24.1", 32934, "Facebook"),
+            ("31.13.24.1", 32934, "Facebook")
         ]
 
         print("\n🔍 Testing well-known IPs:")
@@ -60,7 +60,7 @@ final class RealASNTest: XCTestCase {
             ("2001:4860::8888", 15169, "Google IPv6"),
             ("2606:4700::1", 13335, "Cloudflare IPv6"),
             ("2620:0:1c00::1", 32934, "Facebook IPv6"),
-            ("2a03:2880::1", 32934, "Facebook IPv6"),
+            ("2a03:2880::1", 32934, "Facebook IPv6")
         ]
 
         print("\n🌐 Testing IPv6 addresses:")

@@ -22,7 +22,7 @@ final class SortedRangeDatabaseTest: XCTestCase {
             // More test ranges
             ("8.8.8.0", "8.8.8.255", UInt32(15169), "GOOGLE"),
             ("140.82.0.0", "140.82.63.255", UInt32(20473), "VULTR"),
-            ("140.82.112.0", "140.82.127.255", UInt32(36459), "GITHUB"),
+            ("140.82.112.0", "140.82.127.255", UInt32(36459), "GITHUB")
         ]
 
         await database.buildFromBGPData(testData)
@@ -41,7 +41,7 @@ final class SortedRangeDatabaseTest: XCTestCase {
             ("1.6.222.0", UInt32(9583), "In both overlapping ranges"),
             ("8.8.8.8", UInt32(15169), "Google DNS"),
             ("140.82.121.3", UInt32(36459), "GitHub"),
-            ("1.0.2.0", UInt32(0), "Not routed - should return nil"),
+            ("1.0.2.0", UInt32(0), "Not routed - should return nil")
         ]
 
         print("\n🎯 Testing lookups:")
@@ -113,7 +113,7 @@ final class SortedRangeDatabaseTest: XCTestCase {
             "157.240.22.35",
             "17.253.144.10",
             "204.141.42.155",
-            "180.222.119.247",
+            "180.222.119.247"
         ]
 
         for ip in testIPs {

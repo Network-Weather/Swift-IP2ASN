@@ -6,30 +6,6 @@ echo "Setting up SwiftIP2ASN development environment..."
 echo "Configuring Git hooks..."
 git config core.hooksPath .githooks
 
-# Install SwiftLint if on macOS
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    if ! which swiftlint >/dev/null; then
-        echo "Installing SwiftLint..."
-        if which brew >/dev/null; then
-            brew install swiftlint
-        else
-            echo "⚠️  Homebrew not found. Please install SwiftLint manually:"
-            echo "    brew install swiftlint"
-        fi
-    else
-        echo "✅ SwiftLint already installed"
-    fi
-fi
-
-# Install swift-format
-echo "Installing swift-format..."
-swift build -c release --product swift-format --package-path .build/checkouts/swift-format
-if [ $? -eq 0 ]; then
-    echo "✅ swift-format installed"
-else
-    echo "⚠️  swift-format installation failed. You can install it manually later."
-fi
-
 # Build the project
 echo "Building project..."
 swift build
@@ -54,5 +30,5 @@ echo "  • Tests on pre-commit and pre-push"
 echo "  • Build verification on pre-push"
 echo ""
 echo "To run tests: swift test"
-echo "To format code: swift-format -i -r Sources/ Tests/"
-echo "To lint code: swiftlint"
+echo "To format code: swift format -i -r Sources/ Tests/"
+echo "To lint code: swift format lint -r Sources/ Tests/"

@@ -64,8 +64,8 @@ public actor SortedRangeDatabase {
         ranges.sort()
 
         // Count overlaps
-        for i in 0..<ranges.count - 1 {
-            if ranges[i].endIP >= ranges[i + 1].startIP {
+        for index in 0..<ranges.count - 1 {
+            if ranges[index].endIP >= ranges[index + 1].startIP {
                 overlappingRanges += 1
             }
         }
@@ -158,7 +158,7 @@ public actor SortedRangeDatabase {
         return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]
     }
 
-    private func isPowerOfTwo(_ n: UInt32) -> Bool {
-        return n != 0 && (n & (n - 1)) == 0
+    private func isPowerOfTwo(_ number: UInt32) -> Bool {
+        return number != 0 && (number & (number - 1)) == 0
     }
 }

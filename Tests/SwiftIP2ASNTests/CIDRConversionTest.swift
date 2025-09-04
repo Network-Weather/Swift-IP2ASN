@@ -23,7 +23,7 @@ final class CIDRConversionTest: XCTestCase {
             // Edge cases
             ("10.0.0.0", "10.0.0.0", 1, 32),  // Single IP = /32
             ("192.168.0.0", "192.168.0.127", 128, 25),  // /25
-            ("172.16.0.0", "172.16.0.63", 64, 26),  // /26
+            ("172.16.0.0", "172.16.0.63", 64, 26)  // /26
         ]
 
         print("\nTesting range to CIDR conversion:")
@@ -86,7 +86,7 @@ final class CIDRConversionTest: XCTestCase {
             ("180.222.118.1", 10230, "YAHOO-SG"),  // Also in same /23
             ("57.144.220.1", 32934, "FACEBOOK"),
             ("8.8.8.8", 15169, "GOOGLE"),
-            ("1.1.1.1", 13335, "CLOUDFLARENET"),
+            ("1.1.1.1", 13335, "CLOUDFLARENET")
         ]
 
         print("\n🔍 IP Lookup Results:")

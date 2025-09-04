@@ -77,13 +77,13 @@ public struct CompressedDatabaseFormat {
 
     private static func encodeVarint(_ value: UInt32) -> Data {
         var data = Data()
-        var v = value
+        var current = value
 
-        while v >= 0x80 {
-            data.append(UInt8((v & 0x7F) | 0x80))
-            v >>= 7
+        while current >= 0x80 {
+            data.append(UInt8((current & 0x7F) | 0x80))
+            current >>= 7
         }
-        data.append(UInt8(v))
+        data.append(UInt8(current))
 
         return data
     }

@@ -62,7 +62,7 @@ final class GitHubASNBugTest: XCTestCase {
 
             // IPs in the gap (should not be found)
             ("140.82.64.1", 0, "Gap - not in either range"),
-            ("140.82.100.1", 0, "Gap - not in either range"),
+            ("140.82.100.1", 0, "Gap - not in either range")
         ]
 
         var passed = 0

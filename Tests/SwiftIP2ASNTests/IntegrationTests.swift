@@ -41,7 +41,7 @@ final class IntegrationTests: XCTestCase {
 
             // Canadian IPs
             ("24.114.0.0", "Shaw Communications", "CA"),
-            ("142.59.0.0", "Bell Canada", "CA"),
+            ("142.59.0.0", "Bell Canada", "CA")
         ]
 
         for (ip, description, expectedCountry) in testCases {
@@ -85,7 +85,7 @@ final class IntegrationTests: XCTestCase {
             ("94.142.240.0", "KPN", "NL"),
 
             // Switzerland
-            ("193.222.51.0", "CERN", "CH"),
+            ("193.222.51.0", "CERN", "CH")
         ]
 
         for (ip, description, expectedCountry) in testCases {
@@ -131,7 +131,7 @@ final class IntegrationTests: XCTestCase {
 
             // Australia (part of APNIC)
             ("203.0.113.0", "Documentation Range", nil),  // This is actually reserved
-            ("110.33.0.0", "Telstra", "AU"),
+            ("110.33.0.0", "Telstra", "AU")
         ]
 
         for (ip, description, expectedCountry) in testCases {
@@ -170,7 +170,7 @@ final class IntegrationTests: XCTestCase {
             ("190.210.0.0", "Argentine ISP", "AR"),
 
             // Chile
-            ("200.27.0.0", "Chilean ISP", "CL"),
+            ("200.27.0.0", "Chilean ISP", "CL")
         ]
 
         for (ip, description, expectedCountry) in testCases {
@@ -208,7 +208,7 @@ final class IntegrationTests: XCTestCase {
             ("197.136.0.0", "Kenyan ISP", "KE"),
 
             // Nigeria
-            ("197.210.0.0", "Nigerian ISP", "NG"),
+            ("197.210.0.0", "Nigerian ISP", "NG")
         ]
 
         for (ip, description, expectedCountry) in testCases {
@@ -252,7 +252,7 @@ final class IntegrationTests: XCTestCase {
             ("2001:1200::", "LACNIC allocation", nil, "lacnic"),
 
             // AFRINIC IPv6
-            ("2001:4200::", "AFRINIC allocation", nil, "afrinic"),
+            ("2001:4200::", "AFRINIC allocation", nil, "afrinic")
         ]
 
         for (ip, description, expectedCountry, expectedRegistry) in testCases {
@@ -292,7 +292,7 @@ final class IntegrationTests: XCTestCase {
         let testIPs = [
             "8.8.8.8", "1.1.1.1", "192.168.1.1", "10.0.0.1",
             "52.94.76.1", "142.250.185.78", "151.101.1.140",
-            "185.199.108.153", "172.217.16.142", "216.58.217.46",
+            "185.199.108.153", "172.217.16.142", "216.58.217.46"
         ]
 
         let startTime = Date()
