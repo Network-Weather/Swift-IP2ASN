@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import SwiftIP2ASN
 
 final class IPAddressDebugTests: XCTestCase {
@@ -12,7 +13,7 @@ final class IPAddressDebugTests: XCTestCase {
             ("fe80::1", true),
             ("2001:db8:0:0:0:0:0:1", true)
         ]
-        
+
         for (ip, shouldParse) in testCases {
             let parsed = IPAddress(string: ip)
             if shouldParse {
@@ -22,7 +23,7 @@ final class IPAddressDebugTests: XCTestCase {
             }
         }
     }
-    
+
     func testIPv6RangeParsing() {
         let ranges = [
             "2001:db8::/32",
@@ -30,10 +31,11 @@ final class IPAddressDebugTests: XCTestCase {
             "::/0",
             "2001:db8::/128"
         ]
-        
+
         for rangeStr in ranges {
             let range = IPRange(cidr: rangeStr)
             XCTAssertNotNil(range, "Failed to parse IPv6 range: \(rangeStr)")
         }
     }
 }
+

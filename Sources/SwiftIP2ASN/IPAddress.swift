@@ -4,7 +4,7 @@ import Network
 public enum IPAddress: Sendable, Hashable {
     case v4(IPv4Address)
     case v6(IPv6Address)
-    
+
     public init?(string: String) {
         if let v4 = IPv4Address(string) {
             self = .v4(v4)
@@ -14,14 +14,14 @@ public enum IPAddress: Sendable, Hashable {
             return nil
         }
     }
-    
+
     public var bitCount: Int {
         switch self {
         case .v4: return 32
         case .v6: return 128
         }
     }
-    
+
     public func getBit(at index: Int) -> Bool {
         switch self {
         case .v4(let addr):
@@ -30,7 +30,7 @@ public enum IPAddress: Sendable, Hashable {
             let byteIndex = index / 8
             let bitIndex = 7 - (index % 8)
             return (data[byteIndex] & (1 << bitIndex)) != 0
-            
+
         case .v6(let addr):
             guard index < 128 else { return false }
             let data = addr.rawValue
@@ -39,7 +39,7 @@ public enum IPAddress: Sendable, Hashable {
             return (data[byteIndex] & (1 << bitIndex)) != 0
         }
     }
-    
+
     public var debugDescription: String {
         switch self {
         case .v4(let addr):
@@ -53,29 +53,30 @@ public enum IPAddress: Sendable, Hashable {
 public struct IPRange: Sendable {
     public let start: IPAddress
     public let prefixLength: Int
-    
+
     public init(start: IPAddress, prefixLength: Int) {
         self.start = start
         self.prefixLength = prefixLength
     }
-    
+
     public init?(cidr: String) {
         let parts = cidr.split(separator: "/")
         guard parts.count == 2,
-              let address = IPAddress(string: String(parts[0])),
-              let prefix = Int(parts[1]) else {
+            let address = IPAddress(string: String(parts[0])),
+            let prefix = Int(parts[1])
+        else {
             return nil
         }
-        
+
         let maxPrefix = address.bitCount
         guard prefix >= 0 && prefix <= maxPrefix else {
             return nil
         }
-        
+
         self.start = address
         self.prefixLength = prefix
     }
-    
+
     public func contains(_ address: IPAddress) -> Bool {
         // Check if address types match
         switch (start, address) {
@@ -84,14 +85,13 @@ public struct IPRange: Sendable {
         default:
             return false
         }
-        
+
         // Check prefix bits
-        for i in 0..<prefixLength {
-            if start.getBit(at: i) != address.getBit(at: i) {
-                return false
-            }
+        for bitIndex in 0..<prefixLength where start.getBit(at: bitIndex) != address.getBit(at: bitIndex) {
+            return false
         }
-        
+
         return true
     }
 }
+

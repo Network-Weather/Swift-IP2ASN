@@ -6,7 +6,7 @@ public struct ASNInfo: Sendable, Codable, Equatable {
     public let registry: String
     public let allocatedDate: Date?
     public let name: String?
-    
+
     public init(
         asn: UInt32,
         countryCode: String? = nil,
@@ -28,7 +28,7 @@ public struct IPAllocation: Sendable {
     public let countryCode: String?
     public let registry: String
     public let allocatedDate: Date?
-    
+
     public init(
         range: IPRange,
         asn: UInt32,
@@ -43,3 +43,4 @@ public struct IPAllocation: Sendable {
         self.allocatedDate = allocatedDate
     }
 }
+
