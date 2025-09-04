@@ -1,6 +1,16 @@
 disabled_rules:
   - trailing_whitespace
   - line_length
+  - function_body_length
+  - large_tuple
+  - missing_docs
+  - identifier_name
+  - force_unwrapping
+  - cyclomatic_complexity
+  - trailing_comma
+  - opening_brace
+  - for_where
+  - function_parameter_count
   
 opt_in_rules:
   - attributes

@@ -43,4 +43,3 @@ public struct IPAllocation: Sendable {
         self.allocatedDate = allocatedDate
     }
 }
-

@@ -25,6 +25,21 @@ public actor ASNDatabase {
         isBuilt = true
     }
 
+    /// Build database with BGP data that includes AS names
+    public func buildWithBGPData(bgpEntries: [(range: IPRange, asn: UInt32, name: String?)]) async {
+        for (range, asn, name) in bgpEntries {
+            let asnInfo = ASNInfo(
+                asn: asn,
+                countryCode: nil,
+                registry: "bgp",
+                allocatedDate: nil,
+                name: name
+            )
+            await trie.insert(range: range, asnInfo: asnInfo)
+        }
+        isBuilt = true
+    }
+
     public func buildFromRIRData() async throws {
         let fetcher = RIRDataFetcher()
         let parser = RIRDataParser()
@@ -106,4 +121,3 @@ public enum DatabaseError: Error {
     case invalidData
     case serializationError
 }
-

@@ -155,4 +155,3 @@ final class CompressedTrieTests: XCTestCase {
         XCTAssertEqual(stats.ipv6Entries, 1)
     }
 }
-

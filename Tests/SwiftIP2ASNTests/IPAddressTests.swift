@@ -119,4 +119,3 @@ final class IPAddressTests: XCTestCase {
         XCTAssertEqual(ipv6.debugDescription, "2001:db8::1")
     }
 }
-

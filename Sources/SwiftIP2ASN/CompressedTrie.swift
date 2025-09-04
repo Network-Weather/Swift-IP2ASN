@@ -120,8 +120,9 @@ public actor CompressedTrie {
         )
     }
 
-    private func gatherStatistics(from node: TrieNode, depth: Int, maxDepth: Int) 
-        -> (nodeCount: Int, maxDepth: Int, entries: Int) {
+    private func gatherStatistics(from node: TrieNode, depth: Int, maxDepth: Int)
+        -> (nodeCount: Int, maxDepth: Int, entries: Int)
+    {
         var nodeCount = 1
         var currentMaxDepth = depth
         var entries = node.asnInfo != nil ? 1 : 0
@@ -146,4 +147,3 @@ public struct TrieStatistics: Sendable {
     public let ipv4Entries: Int
     public let ipv6Entries: Int
 }
-

@@ -11,7 +11,7 @@ final class IPAddressDebugTests: XCTestCase {
             ("::", true),
             ("2001:0db8:0000:0000:0000:0000:0000:0001", true),
             ("fe80::1", true),
-            ("2001:db8:0:0:0:0:0:1", true)
+            ("2001:db8:0:0:0:0:0:1", true),
         ]
 
         for (ip, shouldParse) in testCases {
@@ -29,7 +29,7 @@ final class IPAddressDebugTests: XCTestCase {
             "2001:db8::/32",
             "fe80::/10",
             "::/0",
-            "2001:db8::/128"
+            "2001:db8::/128",
         ]
 
         for rangeStr in ranges {
@@ -38,4 +38,3 @@ final class IPAddressDebugTests: XCTestCase {
         }
     }
 }
-

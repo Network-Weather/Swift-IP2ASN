@@ -92,7 +92,7 @@ public struct RIRDataParser: Sendable {
 
         return allocations
     }
-    
+
     private func parseLine(_ line: String, registry: String) -> IPAllocation? {
         if line.hasPrefix("#") || line.isEmpty {
             return nil
@@ -147,7 +147,7 @@ public struct RIRDataParser: Sendable {
             )
         }
     }
-    
+
     private func parseIPv4Allocation(
         startIP: String,
         value: String,
@@ -157,7 +157,8 @@ public struct RIRDataParser: Sendable {
         allocatedDate: Date?
     ) -> IPAllocation? {
         guard let address = IPAddress(string: startIP),
-              let count = UInt32(value) else {
+            let count = UInt32(value)
+        else {
             return nil
         }
 
@@ -172,7 +173,7 @@ public struct RIRDataParser: Sendable {
             allocatedDate: allocatedDate
         )
     }
-    
+
     private func parseIPv6Allocation(
         startIP: String,
         value: String,
@@ -182,7 +183,8 @@ public struct RIRDataParser: Sendable {
         allocatedDate: Date?
     ) -> IPAllocation? {
         guard let address = IPAddress(string: startIP),
-              let prefixLength = Int(value) else {
+            let prefixLength = Int(value)
+        else {
             return nil
         }
 
@@ -214,4 +216,3 @@ public enum RIRError: Error {
     case httpError
     case invalidData
 }
-
