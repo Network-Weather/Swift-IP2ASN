@@ -39,7 +39,8 @@ jobs:
           swift package --allow-writing-to-directory docs-out \
             generate-documentation --target SwiftIP2ASN \
             --output-path docs-out \
-            --transform-for-static-hosting
+            --transform-for-static-hosting \
+            --hosting-base-path /
           # Add Pages config files
           touch docs-out/.nojekyll
           echo "$DOCS_DOMAIN" > docs-out/CNAME
