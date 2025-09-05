@@ -71,9 +71,9 @@ final class OverlapValidationTest: XCTestCase {
                     let currentIP = uint32ToIP(current.start) + "-" + uint32ToIP(current.end)
                     let nextIP = uint32ToIP(next.start) + "-" + uint32ToIP(next.end)
 
-                TestLog.log("\n❌ OVERLAP FOUND!")
-                TestLog.log("   Range 1: \(currentIP) (AS\(current.asn))")
-                TestLog.log("   Range 2: \(nextIP) (AS\(next.asn))")
+                    TestLog.log("\n❌ OVERLAP FOUND!")
+                    TestLog.log("   Range 1: \(currentIP) (AS\(current.asn))")
+                    TestLog.log("   Range 2: \(nextIP) (AS\(next.asn))")
 
                     overlaps.append((currentIP, nextIP))
                 }

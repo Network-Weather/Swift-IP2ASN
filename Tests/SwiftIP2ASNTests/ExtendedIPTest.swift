@@ -95,7 +95,8 @@ final class ExtendedIPTest: XCTestCase {
             } else {
                 notFound += 1
                 results.append((ip: ip, asn: nil, name: nil))
-                TestLog.log("❌ \(ip.padding(toLength: 18, withPad: " ", startingAt: 0)) → NOT FOUND     | \(description)")
+                TestLog.log(
+                    "❌ \(ip.padding(toLength: 18, withPad: " ", startingAt: 0)) → NOT FOUND     | \(description)")
             }
         }
 

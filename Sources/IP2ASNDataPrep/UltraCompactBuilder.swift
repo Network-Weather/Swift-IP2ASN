@@ -11,8 +11,9 @@ public enum UltraCompactBuilder {
         for line in lines {
             let f = line.split(separator: "\t").map(String.init)
             guard f.count >= 5,
-                  let s = ipToUInt32(f[0]),
-                  let e = ipToUInt32(f[1]) else { continue }
+                let s = ipToUInt32(f[0]),
+                let e = ipToUInt32(f[1])
+            else { continue }
             // ASN can be either numeric or prefixed as "AS12345"; normalize
             let asnString = f[2].replacingOccurrences(of: "AS", with: "")
             guard let a = UInt32(asnString) else { continue }
