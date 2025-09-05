@@ -109,21 +109,19 @@ public struct UltraCompactFormat {
                 stats.totalBytes += 4
             } else {
                 // Delta from previous end
-                let gap = range.start - prevEnd - 1
-
+                let gap = range.start &- prevEnd &- 1
+                // Always write a gap varint; high bit indicates presence, 0 means contiguous
                 if gap == 0 {
-                    // Contiguous (99.8% of cases) - use bit flag 0
                     stats.contiguous += 1
+                    data.append(contentsOf: encodeVarint(0))
                 } else {
-                    // Has gap - use bit flag 1 and encode gap
                     stats.gaps += 1
-                    data.append(contentsOf: encodeVarint(gap | 0x8000_0000))  // Set high bit for gap
-                    stats.totalBytes += 4
+                    data.append(contentsOf: encodeVarint(gap | 0x8000_0000))
                 }
             }
 
             // Encode range size (end - start)
-            let size = range.end - range.start
+            let size = range.end &- range.start
             data.append(contentsOf: encodeVarint(size))
 
             // Encode ASN
@@ -202,6 +200,24 @@ public class UltraCompactDatabase {
     private var ranges: [(start: UInt32, end: UInt32, asn: UInt32)] = []
     private var asnNames: [UInt32: String] = [:]
 
+    @inline(__always)
+    private func readUInt32LE(from data: Data, at offset: Int) -> UInt32 {
+        var v: UInt32 = 0
+        _ = withUnsafeMutableBytes(of: &v) { dst in
+            data.copyBytes(to: dst, from: offset..<(offset + 4))
+        }
+        return UInt32(littleEndian: v)
+    }
+
+    @inline(__always)
+    private func readUInt32BE(from data: Data, at offset: Int) -> UInt32 {
+        var v: UInt32 = 0
+        _ = withUnsafeMutableBytes(of: &v) { dst in
+            data.copyBytes(to: dst, from: offset..<(offset + 4))
+        }
+        return UInt32(bigEndian: v)
+    }
+
     public init(path: String) throws {
         let compressed = try Data(contentsOf: URL(fileURLWithPath: path))
         let data = try decompress(compressed)
@@ -213,29 +229,16 @@ public class UltraCompactDatabase {
             throw CompactError.invalidFormat
         }
 
-        let rangeCount = data[4..<8].withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
-        let asnCount = data[8..<12].withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
+        let rangeCount: UInt32 = readUInt32LE(from: data, at: 4)
+        _ = readUInt32LE(from: data, at: 8)
 
         var offset = 12
-        var currentIP: UInt32 = 0
 
         // Decode ranges
-        for index in 0..<rangeCount {
-            if index == 0 {
-                // First range has full start IP
-                currentIP = data[offset..<offset + 4].withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
-                offset += 4
-            } else {
-                // Check for gap
-                if let gapOrSize = UltraCompactFormat.decodeVarint(from: data, offset: &offset) {
-                    if gapOrSize & 0x8000_0000 != 0 {
-                        // Has gap
-                        let gap = gapOrSize & 0x7FFF_FFFF
-                        currentIP += gap + 1
-                    }
-                    // else contiguous (gap = 0)
-                }
-            }
+        for _ in 0..<rangeCount {
+            // Read absolute start
+            let startIP = readUInt32BE(from: data, at: offset)
+            offset += 4
 
             // Decode size and ASN
             guard let size = UltraCompactFormat.decodeVarint(from: data, offset: &offset),
@@ -244,22 +247,23 @@ public class UltraCompactDatabase {
                 throw CompactError.corruptedData
             }
 
-            let endIP = currentIP + size
-            ranges.append((currentIP, endIP, asn))
-            currentIP = endIP + 1
+            let endIP = startIP &+ size
+            ranges.append((startIP, endIP, asn))
         }
 
-        // Skip to ASN table and decode
-        offset = 12 + Int(data[offset..<offset + 4].withUnsafeBytes { $0.load(as: UInt32.self).littleEndian })
+        // Decode ASN table count (written after ranges)
+        guard offset + 4 <= data.count else { throw CompactError.corruptedData }
+        let asnTableCount: UInt32 = readUInt32LE(from: data, at: offset)
+        offset += 4
 
         // Parse ASN names
-        for _ in 0..<asnCount {
+        for _ in 0..<asnTableCount {
             guard let asn = UltraCompactFormat.decodeVarint(from: data, offset: &offset),
                 let nameLen = UltraCompactFormat.decodeVarint(from: data, offset: &offset)
             else {
                 throw CompactError.corruptedData
             }
-
+            guard offset + Int(nameLen) <= data.count else { throw CompactError.corruptedData }
             let nameData = data[offset..<offset + Int(nameLen)]
             if let name = String(data: nameData, encoding: .utf8) {
                 asnNames[asn] = name

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftIP2ASN
 
 /// Improved ASN Database that uses actual BGP data
 public actor ASNDatabaseV2 {

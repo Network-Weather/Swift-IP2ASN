@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import SwiftIP2ASN
 
 public struct BGPDataFetcher: Sendable {
     private let session: URLSession
@@ -22,7 +23,6 @@ public struct BGPDataFetcher: Sendable {
 
         // Save to temp file and decompress using system gunzip
         let tempGzPath = "/tmp/ip2asn-v4-\(UUID().uuidString).tsv.gz"
-        let tempTsvPath = "/tmp/ip2asn-v4-\(UUID().uuidString).tsv"
 
         try data.write(to: URL(fileURLWithPath: tempGzPath))
 

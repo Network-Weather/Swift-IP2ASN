@@ -15,20 +15,30 @@ let package = Package(
         .library(
             name: "SwiftIP2ASN",
             targets: ["SwiftIP2ASN"]),
+        .executable(name: "ip2asn-tools", targets: ["ip2asn-tools"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-format", from: "600.0.0"),
+        // No runtime dependencies
     ],
     targets: [
         .target(
             name: "SwiftIP2ASN",
-            swiftSettings: [
-                .enableUpcomingFeature("StrictConcurrency"),
-                .enableExperimentalFeature("GlobalConcurrency")
-            ]),
+            resources: [
+                // Place the shipping database at Sources/SwiftIP2ASN/Resources/ip2asn.ultra
+                .process("Resources")
+            ]
+        ),
+        .target(
+            name: "IP2ASNDataPrep",
+            dependencies: ["SwiftIP2ASN"]
+        ),
+        .executableTarget(
+            name: "ip2asn-tools",
+            dependencies: ["SwiftIP2ASN", "IP2ASNDataPrep"]
+        ),
         .testTarget(
             name: "SwiftIP2ASNTests",
-            dependencies: ["SwiftIP2ASN"]
+            dependencies: ["SwiftIP2ASN", "IP2ASNDataPrep"]
         ),
     ]
 )

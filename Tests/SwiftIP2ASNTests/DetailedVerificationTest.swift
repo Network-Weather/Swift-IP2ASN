@@ -1,5 +1,6 @@
 import XCTest
 
+@testable import IP2ASNDataPrep
 @testable import SwiftIP2ASN
 
 final class DetailedVerificationTest: XCTestCase {
@@ -129,11 +130,18 @@ final class DetailedVerificationTest: XCTestCase {
     }
 
     private func lookupInBGP(ip: String) async throws -> String {
+        let gz = "/tmp/ip2asn-v4.tsv.gz"
+        let tsv = "/tmp/ip2asn-v4.tsv"
+        let hasGz = FileManager.default.fileExists(atPath: gz)
+        let hasTsv = FileManager.default.fileExists(atPath: tsv)
+        guard hasGz || hasTsv else { return "0" }
+        let sourceCmd = hasGz ? "gunzip -c \(gz)" : "cat \(tsv)"
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = [
             "-c",
-            "gunzip -c /tmp/ip2asn-v4.tsv.gz | awk -F'\\t' -v ip='\(ip)' '$1 <= ip && $2 >= ip { print $3; exit }'"
+            "\(sourceCmd) | awk -F'\\t' -v ip='\(ip)' '$1 <= ip && $2 >= ip { print $3; exit }'"
         ]
 
         let pipe = Pipe()
@@ -155,9 +163,16 @@ final class DetailedVerificationTest: XCTestCase {
     }
 
     private func findRangesForIP(_ ipPrefix: String) async throws -> [String] {
+        let gz = "/tmp/ip2asn-v4.tsv.gz"
+        let tsv = "/tmp/ip2asn-v4.tsv"
+        let hasGz = FileManager.default.fileExists(atPath: gz)
+        let hasTsv = FileManager.default.fileExists(atPath: tsv)
+        guard hasGz || hasTsv else { return [] }
+        let sourceCmd = hasGz ? "gunzip -c \(gz)" : "cat \(tsv)"
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", "gunzip -c /tmp/ip2asn-v4.tsv.gz | grep '^\\(\(ipPrefix)\\)' | head -5"]
+        process.arguments = ["-c", "\(sourceCmd) | grep -E '^\(ipPrefix)\\.' | head -5"]
 
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -171,9 +186,16 @@ final class DetailedVerificationTest: XCTestCase {
     }
 
     private func findASN(_ asn: String) async throws -> [String] {
+        let gz = "/tmp/ip2asn-v4.tsv.gz"
+        let tsv = "/tmp/ip2asn-v4.tsv"
+        let hasGz = FileManager.default.fileExists(atPath: gz)
+        let hasTsv = FileManager.default.fileExists(atPath: tsv)
+        guard hasGz || hasTsv else { return [] }
+        let sourceCmd = hasGz ? "gunzip -c \(gz)" : "cat \(tsv)"
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", "gunzip -c /tmp/ip2asn-v4.tsv.gz | awk -F'\\t' '$3 == \"\(asn)\"' | head -5"]
+        process.arguments = ["-c", "\(sourceCmd) | awk -F'\\t' '$3 == \"\(asn)\"' | head -5"]
 
         let pipe = Pipe()
         process.standardOutput = pipe

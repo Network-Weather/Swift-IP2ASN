@@ -1,8 +1,10 @@
-import Testing
+import XCTest
 
 @testable import SwiftIP2ASN
 
-@Test
-func example() async throws {
-    // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+final class SwiftIP2ASNBasicTests: XCTestCase {
+    func testPackageLoads() throws {
+        // Minimal smoke test to ensure the module builds and links.
+        _ = ASNInfo(asn: 1, registry: "test")
+    }
 }

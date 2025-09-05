@@ -1,4 +1,5 @@
 import Foundation
+import SwiftIP2ASN
 
 /// Simplified BGP data fetcher using RIPE RIS data
 public struct SimpleBGPFetcher: Sendable {

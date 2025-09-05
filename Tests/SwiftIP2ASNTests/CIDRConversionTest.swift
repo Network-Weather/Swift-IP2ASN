@@ -1,11 +1,12 @@
 import XCTest
 
+@testable import IP2ASNDataPrep
 @testable import SwiftIP2ASN
 
 final class CIDRConversionTest: XCTestCase {
 
     func testCIDRConversion() async throws {
-        print("\n🔧 Testing CIDR conversion with real BGP data ranges...")
+        TestLog.log("\n🔧 Testing CIDR conversion with real BGP data ranges...")
 
         // Test data based on actual BGP entries
         let testRanges = [
@@ -26,9 +27,9 @@ final class CIDRConversionTest: XCTestCase {
             ("172.16.0.0", "172.16.0.63", 64, 26)  // /26
         ]
 
-        print("\nTesting range to CIDR conversion:")
-        print("Start IP         → End IP           | Addresses | Expected | Actual | Status")
-        print("─────────────────────────────────────────────────────────────────────────────")
+        TestLog.log("\nTesting range to CIDR conversion:")
+        TestLog.log("Start IP         → End IP           | Addresses | Expected | Actual | Status")
+        TestLog.log("─────────────────────────────────────────────────────────────────────────────")
 
         let parser = BGPDataParser()
 
@@ -42,7 +43,7 @@ final class CIDRConversionTest: XCTestCase {
                 let actualPrefix = getPrefixLength(range)
                 let status = actualPrefix == expectedPrefix ? "✅" : "❌"
 
-                print(
+                TestLog.log(
                     "\(startIP.padding(toLength: 15, withPad: " ", startingAt: 0)) → \(endIP.padding(toLength: 15, withPad: " ", startingAt: 0)) | \(String(expectedSize).padding(toLength: 9, withPad: " ", startingAt: 0)) | /\(expectedPrefix)\(expectedPrefix < 10 ? " " : "")      | /\(actualPrefix)\(actualPrefix < 10 ? " " : "")    | \(status)"
                 )
 
@@ -50,14 +51,14 @@ final class CIDRConversionTest: XCTestCase {
                     print("  ⚠️ Expected /\(expectedPrefix) but got /\(actualPrefix)")
                 }
             } else {
-                print(
+                TestLog.log(
                     "\(startIP.padding(toLength: 15, withPad: " ", startingAt: 0)) → \(endIP.padding(toLength: 15, withPad: " ", startingAt: 0)) | Failed to parse"
                 )
             }
         }
 
         // Now test with the actual IPs
-        print("\n🎯 Testing specific IP lookups with correct CIDR:")
+        TestLog.log("\n🎯 Testing specific IP lookups with correct CIDR:")
 
         let testData = """
             204.141.42.0	204.141.43.255	2639	US	ZOHO-AS
@@ -68,7 +69,7 @@ final class CIDRConversionTest: XCTestCase {
             """
 
         let mappings = parser.parseIPtoASNData(testData)
-        print("Parsed \(mappings.count) mappings")
+        TestLog.log("Parsed \(mappings.count) mappings")
 
         // Build database
         let database = ASNDatabase()
@@ -89,11 +90,11 @@ final class CIDRConversionTest: XCTestCase {
             ("1.1.1.1", 13335, "CLOUDFLARENET")
         ]
 
-        print("\n🔍 IP Lookup Results:")
+        TestLog.log("\n🔍 IP Lookup Results:")
         for (ip, expectedASN, expectedName) in testIPs {
             if let result = await database.lookup(ip) {
                 let status = result.asn == expectedASN ? "✅" : "❌"
-                print(
+                TestLog.log(
                     "\(status) \(ip.padding(toLength: 16, withPad: " ", startingAt: 0)) → AS\(result.asn) (\(result.name ?? "N/A"))"
                 )
 
@@ -101,16 +102,16 @@ final class CIDRConversionTest: XCTestCase {
                     print("  ⚠️ Expected AS\(expectedASN) (\(expectedName))")
                 }
             } else {
-                print(
+                TestLog.log(
                     "❌ \(ip.padding(toLength: 16, withPad: " ", startingAt: 0)) → NOT FOUND (expected AS\(expectedASN))"
                 )
             }
         }
 
-        print("\n✅ CIDR conversion now properly handles any prefix length!")
-        print("   - /23 blocks (512 IPs) work correctly")
-        print("   - /14 blocks (262,144 IPs) work correctly")
-        print("   - IPs 204.141.42.155 and 180.222.119.247 can now be found!")
+        TestLog.log("\n✅ CIDR conversion now properly handles any prefix length!")
+        TestLog.log("   - /23 blocks (512 IPs) work correctly")
+        TestLog.log("   - /14 blocks (262,144 IPs) work correctly")
+        TestLog.log("   - IPs 204.141.42.155 and 180.222.119.247 can now be found!")
     }
 
     private func getPrefixLength(_ range: IPRange) -> Int {

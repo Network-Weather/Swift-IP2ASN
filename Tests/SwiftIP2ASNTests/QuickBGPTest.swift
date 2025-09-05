@@ -5,7 +5,7 @@ import XCTest
 final class QuickBGPTest: XCTestCase {
 
     func testQuickBGPParse() async throws {
-        print("\n🧪 Quick test of BGP data parsing...")
+        TestLog.log("\n🧪 Quick test of BGP data parsing...")
 
         // Use test data instead of decompressing large file
         // For a real test, we should use a small test fixture
@@ -17,19 +17,19 @@ final class QuickBGPTest: XCTestCase {
             """
         let content = testData
 
-        print("Decompressed data: \(content.count) characters")
+        TestLog.log("Decompressed data: \(content.count) characters")
 
         let lines = content.split(separator: "\n")
-        print("Total lines: \(lines.count)")
+        TestLog.log("Total lines: \(lines.count)")
 
         // Show first 10 lines
-        print("\nFirst 10 lines:")
+        TestLog.log("\nFirst 10 lines:")
         for (index, line) in lines.prefix(10).enumerated() {
-            print("\(index+1): \(line)")
+            TestLog.log("\(index+1): \(line)")
         }
 
         // Look for our test IPs
-        print("\n🔍 Looking for specific IPs...")
+        TestLog.log("\n🔍 Looking for specific IPs...")
 
         let testIPs = ["204.141.42", "180.222.119", "57.144.220"]
 
@@ -39,18 +39,18 @@ final class QuickBGPTest: XCTestCase {
             }
 
             if !matching.isEmpty {
-                print("\n✅ Found entries for \(testIP):")
+                TestLog.log("\n✅ Found entries for \(testIP):")
                 for match in matching.prefix(5) {
                     let fields = match.split(separator: "\t").map { String($0) }
                     if fields.count >= 5 {
-                        print("   Range: \(fields[0])-\(fields[1])")
-                        print("   ASN: \(fields[2])")
-                        print("   Country: \(fields[3])")
-                        print("   Name: \(fields[4])")
+                        TestLog.log("   Range: \(fields[0])-\(fields[1])")
+                        TestLog.log("   ASN: \(fields[2])")
+                        TestLog.log("   Country: \(fields[3])")
+                        TestLog.log("   Name: \(fields[4])")
                     }
                 }
             } else {
-                print("\n❌ No exact match for \(testIP)")
+                TestLog.log("\n❌ No exact match for \(testIP)")
 
                 // Try to find which range contains it
                 for line in lines {
@@ -61,9 +61,9 @@ final class QuickBGPTest: XCTestCase {
 
                         // Simple string comparison (not perfect but quick)
                         if startIP <= testIP + ".0" && endIP >= testIP + ".255" {
-                            print("   Might be in range: \(startIP)-\(endIP)")
+                            TestLog.log("   Might be in range: \(startIP)-\(endIP)")
                             if fields.count >= 5 {
-                                print("   ASN: \(fields[2]), Name: \(fields[4])")
+                                TestLog.log("   ASN: \(fields[2]), Name: \(fields[4])")
                             }
                             break
                         }

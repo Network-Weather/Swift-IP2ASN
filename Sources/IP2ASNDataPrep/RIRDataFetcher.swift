@@ -1,4 +1,5 @@
 import Foundation
+import SwiftIP2ASN
 
 public enum RIR: String, CaseIterable, Sendable {
     case arin = "arin"

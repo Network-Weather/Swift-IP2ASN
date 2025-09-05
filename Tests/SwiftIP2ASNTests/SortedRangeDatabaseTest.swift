@@ -5,7 +5,7 @@ import XCTest
 final class SortedRangeDatabaseTest: XCTestCase {
 
     func testBinarySearchWithOverlappingRanges() async throws {
-        print("\n🔬 Testing Sorted Range Database with overlapping ranges\n")
+        TestLog.log("\n🔬 Testing Sorted Range Database with overlapping ranges\n")
 
         let database = SortedRangeDatabase()
 
@@ -28,10 +28,10 @@ final class SortedRangeDatabaseTest: XCTestCase {
         await database.buildFromBGPData(testData)
 
         let stats = await database.getStatistics()
-        print("📊 Database Statistics:")
-        print("   Total ranges: \(stats.totalRanges)")
-        print("   Overlapping ranges: \(stats.overlaps)")
-        print("   Non-power-of-2 ranges: \(stats.nonPowerOf2)")
+        TestLog.log("📊 Database Statistics:")
+        TestLog.log("   Total ranges: \(stats.totalRanges)")
+        TestLog.log("   Overlapping ranges: \(stats.overlaps)")
+        TestLog.log("   Non-power-of-2 ranges: \(stats.nonPowerOf2)")
 
         // Test lookups
         let testCases = [
@@ -44,11 +44,11 @@ final class SortedRangeDatabaseTest: XCTestCase {
             ("1.0.2.0", UInt32(0), "Not routed - should return nil")
         ]
 
-        print("\n🎯 Testing lookups:")
+        TestLog.log("\n🎯 Testing lookups:")
         for (ip, expectedASN, description) in testCases {
             if let result = await database.lookup(ip) {
                 let status = result.asn == expectedASN ? "✅" : "❌"
-                print(
+                TestLog.log(
                     "\(status) \(ip.padding(toLength: 15, withPad: " ", startingAt: 0)) → AS\(result.asn) (\(result.name ?? "Unknown")) - \(description)"
                 )
 
@@ -57,7 +57,8 @@ final class SortedRangeDatabaseTest: XCTestCase {
                 }
             } else {
                 let status = expectedASN == 0 ? "✅" : "❌"
-                print("\(status) \(ip.padding(toLength: 15, withPad: " ", startingAt: 0)) → NOT FOUND - \(description)")
+                TestLog.log(
+                    "\(status) \(ip.padding(toLength: 15, withPad: " ", startingAt: 0)) → NOT FOUND - \(description)")
 
                 if expectedASN != 0 {
                     XCTFail("Should have found ASN for \(ip)")
@@ -67,9 +68,9 @@ final class SortedRangeDatabaseTest: XCTestCase {
     }
 
     func testPerformanceWithSimpleData() async throws {
-        print("\n⚡ Testing performance with sample BGP data\n")
+        TestLog.log("\n⚡ Testing performance with sample BGP data\n")
 
-        print("📊 Using sample BGP data in TSV format...")
+        TestLog.log("📊 Using sample BGP data in TSV format...")
 
         // Sample BGP data in actual TSV format (start_ip\tend_ip\tasn\tcountry\tname)
         let bgpLines = """
@@ -93,19 +94,20 @@ final class SortedRangeDatabaseTest: XCTestCase {
             }
         }
 
-        print("🏗️ Building database with \(entries.count) entries...")
+        TestLog.log("🏗️ Building database with \(entries.count) entries...")
         let database = SortedRangeDatabase()
 
         let buildStart = Date()
         await database.buildFromBGPData(entries)
         let buildTime = Date().timeIntervalSince(buildStart)
-        print("   Build time: \(String(format: "%.3f", buildTime)) seconds")
+        TestLog.log("   Build time: \(String(format: "%.3f", buildTime)) seconds")
 
         let stats = await database.getStatistics()
-        print("   Stats: \(stats.totalRanges) ranges, \(stats.overlaps) overlaps, \(stats.nonPowerOf2) non-power-of-2")
+        TestLog.log(
+            "   Stats: \(stats.totalRanges) ranges, \(stats.overlaps) overlaps, \(stats.nonPowerOf2) non-power-of-2")
 
         // Performance test
-        print("\n⏱️ Testing lookup performance...")
+        TestLog.log("\n⏱️ Testing lookup performance...")
         let testIPs = [
             "8.8.8.8",
             "1.1.1.1",
@@ -122,14 +124,14 @@ final class SortedRangeDatabaseTest: XCTestCase {
             let elapsed = Date().timeIntervalSince(start) * 1_000_000  // Convert to microseconds
 
             if let result = result {
-                print("   \(ip) → AS\(result.asn) in \(String(format: "%.1f", elapsed))μs")
+                TestLog.log("   \(ip) → AS\(result.asn) in \(String(format: "%.1f", elapsed))μs")
             } else {
-                print("   \(ip) → NOT FOUND in \(String(format: "%.1f", elapsed))μs")
+                TestLog.log("   \(ip) → NOT FOUND in \(String(format: "%.1f", elapsed))μs")
             }
         }
 
         // Bulk performance test
-        print("\n📈 Bulk lookup test (100 random lookups)...")
+        TestLog.log("\n📈 Bulk lookup test (100 random lookups)...")
         let bulkStart = Date()
         var found = 0
         for _ in 0..<100 {
@@ -144,9 +146,9 @@ final class SortedRangeDatabaseTest: XCTestCase {
         let bulkTime = Date().timeIntervalSince(bulkStart)
         let avgTime = bulkTime / 100.0 * 1_000_000  // microseconds per lookup
 
-        print("   100 lookups in \(String(format: "%.3f", bulkTime))s")
-        print("   Average: \(String(format: "%.1f", avgTime))μs per lookup")
-        print("   Found: \(found)/100 IPs in database")
+        TestLog.log("   100 lookups in \(String(format: "%.3f", bulkTime))s")
+        TestLog.log("   Average: \(String(format: "%.1f", avgTime))μs per lookup")
+        TestLog.log("   Found: \(found)/100 IPs in database")
 
         // Verify it's fast enough
         XCTAssertLessThan(avgTime, 1000, "Average lookup should be under 1000μs")

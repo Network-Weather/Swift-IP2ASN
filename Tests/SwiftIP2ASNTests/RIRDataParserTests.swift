@@ -1,5 +1,6 @@
 import XCTest
 
+@testable import IP2ASNDataPrep
 @testable import SwiftIP2ASN
 
 final class RIRDataParserTests: XCTestCase {

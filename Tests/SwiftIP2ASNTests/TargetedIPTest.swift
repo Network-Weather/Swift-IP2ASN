@@ -1,11 +1,12 @@
 import XCTest
 
+@testable import IP2ASNDataPrep
 @testable import SwiftIP2ASN
 
 final class TargetedIPTest: XCTestCase {
 
     func testSpecificIPsWithSampleData() async throws {
-        print("\n🎯 Testing specific IPs with sample BGP data...")
+        TestLog.log("\n🎯 Testing specific IPs with sample BGP data...")
 
         // Create sample BGP data that includes the requested IPs
         // Based on actual BGP data format from IPtoASN
@@ -20,7 +21,7 @@ final class TargetedIPTest: XCTestCase {
         let parser = BGPDataParser()
         let mappings = parser.parseIPtoASNData(sampleData)
 
-        print("Parsed \(mappings.count) mappings from sample data")
+        TestLog.log("Parsed \(mappings.count) mappings from sample data")
 
         // Build a small database with this data
         let database = ASNDatabase()
@@ -41,28 +42,28 @@ final class TargetedIPTest: XCTestCase {
             ("1.1.1.1", 13335, "Cloudflare")
         ]
 
-        print("\n🔍 Testing IP lookups:")
+        TestLog.log("\n🔍 Testing IP lookups:")
 
         for (ip, expectedASN, company) in testIPs {
             if let result = await database.lookup(ip) {
                 let status = result.asn == expectedASN ? "✅" : "❌"
-                print("\(status) \(ip) → AS\(result.asn) (expected AS\(expectedASN) for \(company))")
+                TestLog.log("\(status) \(ip) → AS\(result.asn) (expected AS\(expectedASN) for \(company))")
 
                 if result.asn != expectedASN {
                     print("   Note: Got AS\(result.asn) instead of AS\(expectedASN)")
                 }
             } else {
-                print("❌ \(ip) → NOT FOUND (expected AS\(expectedASN) for \(company))")
+                TestLog.log("❌ \(ip) → NOT FOUND (expected AS\(expectedASN) for \(company))")
             }
         }
 
-        print("\n📝 Summary:")
-        print("The BGP data parsing and lookup works correctly.")
-        print("IPs 204.141.42.155 and 180.222.119.247 can be resolved to their ASNs.")
-        print("To use real data, the library needs to:")
-        print("1. Download from IPtoASN.com (✅ implemented)")
-        print("2. Decompress using gunzip (✅ implemented)")
-        print("3. Parse the TSV data (✅ implemented)")
-        print("4. Handle the full dataset efficiently (needs optimization for 200k+ entries)")
+        TestLog.log("\n📝 Summary:")
+        TestLog.log("The BGP data parsing and lookup works correctly.")
+        TestLog.log("IPs 204.141.42.155 and 180.222.119.247 can be resolved to their ASNs.")
+        TestLog.log("To use real data, the library needs to:")
+        TestLog.log("1. Download from IPtoASN.com (✅ implemented)")
+        TestLog.log("2. Decompress using gunzip (✅ implemented)")
+        TestLog.log("3. Parse the TSV data (✅ implemented)")
+        TestLog.log("4. Handle the full dataset efficiently (needs optimization for 200k+ entries)")
     }
 }

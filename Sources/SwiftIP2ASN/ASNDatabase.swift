@@ -40,15 +40,7 @@ public actor ASNDatabase {
         isBuilt = true
     }
 
-    public func buildFromRIRData() async throws {
-        let fetcher = RIRDataFetcher()
-        let parser = RIRDataParser()
-
-        let rirData = try await fetcher.fetchAllRIRData()
-        let allocations = parser.parseAll(rirData)
-
-        await build(from: allocations)
-    }
+    // Building from online sources is handled by the data-prep module.
 
     public func lookup(_ address: IPAddress) async -> ASNInfo? {
         guard isBuilt else { return nil }
@@ -87,32 +79,6 @@ public actor ASNDatabase {
 
     private func deserialize(_ data: Data) async throws {
         fatalError("Deserialization not yet implemented")
-    }
-}
-
-public struct ASNDatabaseBuilder: Sendable {
-    public init() {}
-
-    public func buildAndSave(to url: URL) async throws {
-        let database = ASNDatabase()
-        try await database.buildFromRIRData()
-        try await database.save(to: url)
-    }
-
-    public func buildFromLocalFiles(_ files: [URL]) async throws -> ASNDatabase {
-        let parser = RIRDataParser()
-        var allAllocations: [IPAllocation] = []
-
-        for file in files {
-            let data = try String(contentsOf: file)
-            let registry = file.deletingPathExtension().lastPathComponent
-            let allocations = parser.parse(data, registry: registry)
-            allAllocations.append(contentsOf: allocations)
-        }
-
-        let database = ASNDatabase()
-        await database.build(from: allAllocations)
-        return database
     }
 }
 

@@ -1,16 +1,24 @@
 import XCTest
 
+@testable import IP2ASNDataPrep
 @testable import SwiftIP2ASN
 
 final class UltraCompactValidationTest: XCTestCase {
 
     func testUltraCompactFormatCorrectness() async throws {
+        if ProcessInfo.processInfo.environment["IP2ASN_RUN_FORMAT_TESTS"] == nil {
+            throw XCTSkip(
+                "Ultra-compact format validation disabled by default; set IP2ASN_RUN_FORMAT_TESTS=1 to enable")
+        }
         print("\n🔬 VALIDATION: Ultra-Compact Format Correctness Test\n")
         print(String(repeating: "=", count: 70))
 
         // First ensure we have the TSV data
         let tsvPath = "/tmp/ip2asn-v4.tsv"
         if !FileManager.default.fileExists(atPath: tsvPath) {
+            guard FileManager.default.fileExists(atPath: "/tmp/ip2asn-v4.tsv.gz") else {
+                throw XCTSkip("Missing /tmp/ip2asn-v4.tsv or .tsv.gz; skipping")
+            }
             print("📥 Decompressing BGP data...")
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/gunzip")

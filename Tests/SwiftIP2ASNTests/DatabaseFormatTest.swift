@@ -1,10 +1,15 @@
 import XCTest
 
+@testable import IP2ASNDataPrep
 @testable import SwiftIP2ASN
 
 final class DatabaseFormatTest: XCTestCase {
 
     func testDatabaseFormats() async throws {
+        // Skip unless explicitly enabled (avoids using external tools and large files by default)
+        if ProcessInfo.processInfo.environment["IP2ASN_RUN_FORMAT_TESTS"] == nil {
+            throw XCTSkip("Format/size comparison disabled by default; set IP2ASN_RUN_FORMAT_TESTS=1 to enable")
+        }
         print("\n📊 Comparing Database Formats for Embedding\n")
 
         // First, get the BGP data
@@ -12,8 +17,17 @@ final class DatabaseFormatTest: XCTestCase {
 
         let tsvPath = "/tmp/ip2asn-v4.tsv"
 
-        // Ensure we have uncompressed TSV
-        if !FileManager.default.fileExists(atPath: tsvPath) {
+        // Ensure we have uncompressed TSV; skip if not present to keep tests fast/offline
+        guard
+            FileManager.default.fileExists(atPath: tsvPath)
+                || FileManager.default.fileExists(atPath: "/tmp/ip2asn-v4.tsv.gz")
+        else {
+            throw XCTSkip(
+                "No TSV present in /tmp; provide test data or set IP2ASN_RUN_FORMAT_TESTS=1 with files present")
+        }
+        if !FileManager.default.fileExists(atPath: tsvPath),
+            FileManager.default.fileExists(atPath: "/tmp/ip2asn-v4.tsv.gz")
+        {
             print("   Decompressing BGP data...")
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/gunzip")
@@ -95,7 +109,7 @@ final class DatabaseFormatTest: XCTestCase {
         try subsetData.write(toFile: tempTSV, atomically: true, encoding: .utf8)
 
         let compressStart = Date()
-        try CompressedDatabaseFormat.createCompressed(from: tempTSV, to: compressedPath)
+        try CompressedDatabaseBuilder.createCompressed(from: tempTSV, to: compressedPath)
         let compressTime = Date().timeIntervalSince(compressStart)
 
         guard let compressedSize = try FileManager.default.attributesOfItem(atPath: compressedPath)[.size] as? Int
@@ -179,7 +193,7 @@ final class DatabaseFormatTest: XCTestCase {
         let compressedPath = "/tmp/ip2asn-full.cdb"
 
         let start = Date()
-        try CompressedDatabaseFormat.createCompressed(from: tsvPath, to: compressedPath)
+        try CompressedDatabaseBuilder.createCompressed(from: tsvPath, to: compressedPath)
         let elapsed = Date().timeIntervalSince(start)
 
         guard let size = try FileManager.default.attributesOfItem(atPath: compressedPath)[.size] as? Int else {

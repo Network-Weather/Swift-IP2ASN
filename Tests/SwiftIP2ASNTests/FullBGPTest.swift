@@ -1,11 +1,14 @@
 import XCTest
 
+@testable import IP2ASNDataPrep
 @testable import SwiftIP2ASN
 
 @available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *)
 final class FullBGPTest: XCTestCase {
 
     func testRealIPtoASNLookup() async throws {
+        throw XCTSkip("Test disabled: Should not build database from online data during regular test runs")
+
         print("\n🌐 Building database with REAL BGP data from IPtoASN.com...")
         print("This will download and parse the actual IP-to-ASN database")
         print("(May take 10-30 seconds depending on network speed)\n")

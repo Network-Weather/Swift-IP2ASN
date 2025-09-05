@@ -1,14 +1,24 @@
 import XCTest
 
+@testable import IP2ASNDataPrep
 @testable import SwiftIP2ASN
 
 @available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *)
 final class ExtendedIPTest: XCTestCase {
 
     func testLargerSetOfIPs() async throws {
-        print("\n🌐 Testing with a larger set of IP addresses\n")
+        TestLog.log("\n🌐 Testing with a larger set of IP addresses\n")
 
-        let ip2asn = try await SwiftIP2ASN.buildWithBGPData()
+        // Build a small database via the data-prep fetcher (offline, hardcoded sample)
+        let fetcher = SimpleBGPFetcher()
+        let data = try await fetcher.fetchCurrentBGPData()
+        let db = ASNDatabase()
+        var entries: [(range: IPRange, asn: UInt32, name: String?)] = []
+        for (cidr, asn, name) in data {
+            if let range = IPRange(cidr: cidr) { entries.append((range, asn, name)) }
+        }
+        await db.buildWithBGPData(bgpEntries: entries)
+        let ip2asn = SwiftIP2ASN(database: db)
 
         // Extended test set including the IP you mentioned
         let testIPs = [
@@ -67,7 +77,7 @@ final class ExtendedIPTest: XCTestCase {
         var notFound = 0
         var results: [(ip: String, asn: UInt32?, name: String?)] = []
 
-        print("Testing \(testIPs.count) IP addresses...\n")
+        TestLog.log("Testing \(testIPs.count) IP addresses...\n")
 
         for (ip, description) in testIPs {
             if let result = await ip2asn.lookup(ip) {
@@ -75,55 +85,55 @@ final class ExtendedIPTest: XCTestCase {
                 results.append((ip: ip, asn: result.asn, name: result.name))
 
                 let asnDisplay = result.asn == 0 ? "AS0 ❌" : "AS\(result.asn)"
-                print(
+                TestLog.log(
                     "✅ \(ip.padding(toLength: 18, withPad: " ", startingAt: 0)) → \(asnDisplay.padding(toLength: 10, withPad: " ", startingAt: 0)) | \(description)"
                 )
 
                 if result.name != nil {
-                    print("   └─ \(result.name!)")
+                    TestLog.log("   └─ \(result.name!)")
                 }
             } else {
                 notFound += 1
                 results.append((ip: ip, asn: nil, name: nil))
-                print("❌ \(ip.padding(toLength: 18, withPad: " ", startingAt: 0)) → NOT FOUND     | \(description)")
+                TestLog.log("❌ \(ip.padding(toLength: 18, withPad: " ", startingAt: 0)) → NOT FOUND     | \(description)")
             }
         }
 
-        print("\n📊 Statistics:")
-        print("   Total IPs tested: \(testIPs.count)")
-        print("   Found: \(found)")
-        print("   Not found: \(notFound)")
+        TestLog.log("\n📊 Statistics:")
+        TestLog.log("   Total IPs tested: \(testIPs.count)")
+        TestLog.log("   Found: \(found)")
+        TestLog.log("   Not found: \(notFound)")
 
         // Check how many returned ASN 0
         let zeroASNs = results.filter { $0.asn == 0 }.count
         let nonZeroASNs = results.filter { $0.asn != nil && $0.asn! > 0 }.count
 
-        print("\n   ASN Analysis:")
-        print("   - Non-zero ASNs: \(nonZeroASNs)")
-        print("   - Zero ASNs: \(zeroASNs)")
-        print("   - Not found: \(notFound)")
+        TestLog.log("\n   ASN Analysis:")
+        TestLog.log("   - Non-zero ASNs: \(nonZeroASNs)")
+        TestLog.log("   - Zero ASNs: \(zeroASNs)")
+        TestLog.log("   - Not found: \(notFound)")
 
         // Specifically check the requested IP
-        print("\n🔍 Detailed check for 204.141.42.155:")
+        TestLog.log("\n🔍 Detailed check for 204.141.42.155:")
         if let result = await ip2asn.lookup("204.141.42.155") {
-            print("   Found in database!")
-            print("   ASN: \(result.asn)")
-            print("   Name: \(result.name ?? "N/A")")
-            print("   Registry: \(result.registry)")
+            TestLog.log("   Found in database!")
+            TestLog.log("   ASN: \(result.asn)")
+            TestLog.log("   Name: \(result.name ?? "N/A")")
+            TestLog.log("   Registry: \(result.registry)")
         } else {
-            print("   ⚠️ NOT FOUND in current BGP data")
-            print("   Note: The SimpleBGPFetcher currently has a limited hardcoded dataset.")
-            print("   In production, you would fetch from real BGP sources like:")
-            print("   - IPtoASN.com (comprehensive database)")
-            print("   - RouteViews BGP archives")
-            print("   - RIPE RIS data")
+            TestLog.log("   ⚠️ NOT FOUND in current BGP data")
+            TestLog.log("   Note: The SimpleBGPFetcher currently has a limited hardcoded dataset.")
+            TestLog.log("   In production, you would fetch from real BGP sources like:")
+            TestLog.log("   - IPtoASN.com (comprehensive database)")
+            TestLog.log("   - RouteViews BGP archives")
+            TestLog.log("   - RIPE RIS data")
         }
 
         if notFound > 0 || zeroASNs > 0 {
-            print("\n⚠️ Note: Some IPs not found or returned ASN 0")
-            print("This is expected with the limited hardcoded BGP data.")
-            print("The SimpleBGPFetcher only includes major providers for testing.")
-            print("Production implementation would use full BGP routing tables.")
+            TestLog.log("\n⚠️ Note: Some IPs not found or returned ASN 0")
+            TestLog.log("This is expected with the limited hardcoded BGP data.")
+            TestLog.log("The SimpleBGPFetcher only includes major providers for testing.")
+            TestLog.log("Production implementation would use full BGP routing tables.")
         }
     }
 }
