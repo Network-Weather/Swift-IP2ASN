@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import SwiftIP2ASN
 
 final class EmbeddedDatabaseTests: XCTestCase {
@@ -13,10 +14,10 @@ final class EmbeddedDatabaseTests: XCTestCase {
 
         // Canonical IPs that should be present in a current full DB
         let cases: [(String, UInt32)] = [
-            ("8.8.8.8", 15169),       // Google
-            ("1.1.1.1", 13335),       // Cloudflare
+            ("8.8.8.8", 15169),  // Google
+            ("1.1.1.1", 13335),  // Cloudflare
             ("52.84.228.25", 16509),  // Amazon CloudFront
-            ("140.82.121.3", 36459)   // GitHub
+            ("140.82.121.3", 36459)  // GitHub
         ]
 
         for (ip, expected) in cases {
@@ -26,4 +27,3 @@ final class EmbeddedDatabaseTests: XCTestCase {
         }
     }
 }
-
