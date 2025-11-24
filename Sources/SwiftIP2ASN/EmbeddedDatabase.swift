@@ -26,6 +26,15 @@ public enum EmbeddedDatabase {
 ///
 /// The database is cached permanently to disk and NEVER re-fetched once downloaded.
 /// Use `refresh()` to check for updates (issues HEAD request, only downloads if changed).
+///
+/// Apps can ship with a bundled database for offline-first operation:
+/// ```swift
+/// let remote = RemoteDatabase(
+///     bundledDatabasePath: Bundle.main.path(forResource: "ip2asn", ofType: "ultra")
+/// )
+/// let db = try await remote.load()  // Uses bundled DB if no cache exists
+/// try await remote.refresh()         // Check for updates in background
+/// ```
 public actor RemoteDatabase {
     /// Default URL for the latest IP2ASN database.
     public static let defaultURL = URL(string: "https://pkgs.networkweather.com/db/ip2asn.ultra")!
@@ -33,17 +42,23 @@ public actor RemoteDatabase {
     private let cacheURL: URL
     private let metadataURL: URL
     private let remoteURL: URL
+    private let bundledDatabasePath: String?
     private var cachedDatabase: UltraCompactDatabase?
 
     /// Creates a RemoteDatabase fetcher.
     /// - Parameters:
     ///   - remoteURL: URL to fetch the database from (defaults to pkgs.networkweather.com)
     ///   - cacheDirectory: Directory to store the cached database (defaults to Application Support)
+    ///   - bundledDatabasePath: Path to a database bundled with the app. Used as fallback when no
+    ///     cached database exists, allowing offline-first operation. The app can later call
+    ///     `refresh()` to check for updates.
     public init(
         remoteURL: URL = RemoteDatabase.defaultURL,
-        cacheDirectory: URL? = nil
+        cacheDirectory: URL? = nil,
+        bundledDatabasePath: String? = nil
     ) {
         self.remoteURL = remoteURL
+        self.bundledDatabasePath = bundledDatabasePath
 
         let cacheDir =
             cacheDirectory
@@ -56,22 +71,36 @@ public actor RemoteDatabase {
         self.metadataURL = cacheDir.appendingPathComponent("ip2asn.meta.json")
     }
 
-    /// Loads the database, fetching from remote only if not already cached.
-    /// Once cached, the database is NEVER re-fetched automatically.
+    /// Loads the database using this priority:
+    /// 1. In-memory cache (if already loaded)
+    /// 2. Disk cache (from previous download)
+    /// 3. Bundled database (if provided in init)
+    /// 4. Remote fetch (downloads from network)
+    ///
+    /// Once loaded, the database is cached in memory. Call `refresh()` to check for updates.
     public func load() async throws -> UltraCompactDatabase {
         // Return in-memory cache if available
         if let db = cachedDatabase {
             return db
         }
 
-        // Check disk cache
+        // Check disk cache (downloaded updates take priority over bundled)
         if FileManager.default.fileExists(atPath: cacheURL.path) {
             let db = try UltraCompactDatabase(path: cacheURL.path)
             cachedDatabase = db
             return db
         }
 
-        // Fetch from remote (only happens once per device)
+        // Use bundled database if provided (works offline)
+        if let bundledPath = bundledDatabasePath,
+            FileManager.default.fileExists(atPath: bundledPath)
+        {
+            let db = try UltraCompactDatabase(path: bundledPath)
+            cachedDatabase = db
+            return db
+        }
+
+        // Fetch from remote (only happens if no bundled DB and no cache)
         return try await fetchAndCache()
     }
 
@@ -79,19 +108,17 @@ public actor RemoteDatabase {
     public enum RefreshResult: Sendable {
         case alreadyCurrent
         case updated(UltraCompactDatabase)
-        case noCacheToRefresh
     }
 
     /// Checks for updates and downloads only if the remote database has changed.
     /// Uses ETag/Last-Modified headers to avoid unnecessary downloads.
+    ///
+    /// If using a bundled database (no previous download), this will always download
+    /// since we don't know the bundled database's version.
+    ///
     /// - Returns: `.alreadyCurrent` if no update needed, `.updated(db)` if new database was downloaded
     @discardableResult
     public func refresh() async throws -> RefreshResult {
-        // If no cache exists, this isn't a refresh - caller should use load()
-        guard FileManager.default.fileExists(atPath: cacheURL.path) else {
-            return .noCacheToRefresh
-        }
-
         // Load stored metadata (ETag/Last-Modified from previous download)
         let storedMeta = loadMetadata()
 
@@ -111,7 +138,7 @@ public actor RemoteDatabase {
         let remoteETag = httpResponse.value(forHTTPHeaderField: "ETag")
         let remoteLastModified = httpResponse.value(forHTTPHeaderField: "Last-Modified")
 
-        // Check if we already have this version
+        // Check if we already have this version (only if we have metadata from a previous download)
         if let storedETag = storedMeta?.etag, let remoteETag = remoteETag {
             if storedETag == remoteETag {
                 return .alreadyCurrent
@@ -124,7 +151,7 @@ public actor RemoteDatabase {
             }
         }
 
-        // Remote is newer, download it
+        // No metadata (using bundled DB) or remote is newer - download it
         let db = try await fetchAndCache()
         return .updated(db)
     }

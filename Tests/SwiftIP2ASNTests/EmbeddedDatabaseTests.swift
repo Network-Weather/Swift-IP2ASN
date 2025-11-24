@@ -61,9 +61,43 @@ final class EmbeddedDatabaseTests: XCTestCase {
             break  // Expected
         case .updated:
             XCTFail("Should not have downloaded again - database hasn't changed")
-        case .noCacheToRefresh:
-            XCTFail("Cache should exist")
         }
+
+        // Cleanup
+        try? FileManager.default.removeItem(at: tempDir)
+    }
+
+    func testBundledDatabaseFallback() async throws {
+        // Use the library's embedded database as our "bundled" database
+        guard let bundledPath = Bundle.module.url(forResource: "ip2asn", withExtension: "ultra")?.path
+        else {
+            throw XCTSkip("No embedded database to test with")
+        }
+
+        // Use a temp directory with no cache
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SwiftIP2ASNTest-\(UUID().uuidString)")
+
+        let remote = RemoteDatabase(
+            cacheDirectory: tempDir,
+            bundledDatabasePath: bundledPath
+        )
+
+        // Should not have a cached download yet
+        let isCached = await remote.isCached()
+        XCTAssertFalse(isCached, "Should not have downloaded cache initially")
+
+        // Load should use bundled database (no network needed)
+        let db = try await remote.load()
+        XCTAssertGreaterThan(db.entryCount, 100_000, "Bundled DB should have entries")
+
+        // Verify lookups work
+        let result = db.lookup("8.8.8.8")
+        XCTAssertEqual(result?.asn, 15169, "Google DNS should be AS15169")
+
+        // Still no cache (we used bundled, not downloaded)
+        let stillNotCached = await remote.isCached()
+        XCTAssertFalse(stillNotCached, "Should still not have downloaded cache")
 
         // Cleanup
         try? FileManager.default.removeItem(at: tempDir)
