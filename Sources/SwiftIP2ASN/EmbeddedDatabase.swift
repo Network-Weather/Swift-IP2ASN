@@ -1,24 +1,19 @@
 import Foundation
 
+// MARK: - EmbeddedDatabase
+
+/// Access to embedded database resources bundled with the package.
 public enum EmbeddedDatabase {
-    public enum Error: Swift.Error {
+    public enum Error: Swift.Error, Sendable {
         case resourceNotFound
     }
 
     /// Loads the embedded Ultra-Compact database shipped as a SwiftPM resource.
     /// Place the file at `Sources/SwiftIP2ASN/Resources/ip2asn.ultra`.
     public static func loadUltraCompact() throws -> UltraCompactDatabase {
-        #if SWIFT_PACKAGE
-            let bundle = Bundle.module
-        #else
-            let bundle = Bundle(for: Sentinel.self)
-        #endif
-
-        if let url = bundle.url(forResource: "ip2asn", withExtension: "ultra") {
-            return try UltraCompactDatabase(path: url.path)
+        guard let url = Bundle.module.url(forResource: "ip2asn", withExtension: "ultra") else {
+            throw Error.resourceNotFound
         }
-        throw Error.resourceNotFound
+        return try UltraCompactDatabase(path: url.path)
     }
 }
-
-private final class Sentinel: NSObject {}

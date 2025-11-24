@@ -163,7 +163,9 @@ public struct RIRDataParser: Sendable {
             return nil
         }
 
-        let prefixLength = 32 - Int(log2(Double(count)))
+        // Use bit operations instead of floating-point log2
+        // count must be power of 2 for valid CIDR; trailing zeros = log2(count)
+        let prefixLength = 32 - count.trailingZeroBitCount
         let range = IPRange(start: address, prefixLength: prefixLength)
 
         return IPAllocation(

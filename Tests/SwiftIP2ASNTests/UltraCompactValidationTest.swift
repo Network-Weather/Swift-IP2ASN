@@ -63,7 +63,7 @@ final class UltraCompactValidationTest: XCTestCase {
         try testData.write(toFile: testTSV, atomically: true, encoding: .utf8)
 
         let compactPath = "/tmp/test_ultra.cdb"
-        try UltraCompactFormat.createUltraCompact(from: testTSV, to: compactPath)
+        try UltraCompactBuilder.createUltraCompact(from: testTSV, to: compactPath)
 
         // Load the compact database
         print("\n📂 Loading ultra-compact database...")

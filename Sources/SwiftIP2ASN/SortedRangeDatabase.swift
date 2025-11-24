@@ -1,98 +1,143 @@
 import Foundation
-import Network
 
-/// A sorted array-based database for IP to ASN lookups
-/// Handles overlapping and arbitrary-sized ranges efficiently
+// MARK: - SortedRangeDatabase
+
+/// High-performance sorted array database for IP to ASN lookups.
+///
+/// Uses binary search with O(log n) lookup time. Handles overlapping
+/// ranges by preferring the most specific (smallest) match.
+///
+/// Thread Safety:
+/// - Build phase: Call `buildFromBGPData()` once.
+/// - Lookup phase: After building, `lookup()` is actor-isolated and safe.
 public actor SortedRangeDatabase {
 
-    /// Represents an IP range with its ASN mapping
-    struct IPRangeEntry: Comparable {
-        let startIP: UInt32  // For IPv4, stored as UInt32
+    // MARK: - Types
+
+    /// Compact IP range entry (16 bytes).
+    private struct IPRangeEntry: Comparable {
+        let startIP: UInt32
         let endIP: UInt32
         let asn: UInt32
-        let name: String?
+        let nameIndex: Int32  // Index into names array, -1 if no name
 
+        @inlinable
         static func < (lhs: IPRangeEntry, rhs: IPRangeEntry) -> Bool {
-            // Sort by start IP, then by end IP for overlapping ranges
             if lhs.startIP != rhs.startIP {
                 return lhs.startIP < rhs.startIP
             }
             return lhs.endIP < rhs.endIP
         }
 
+        @inlinable
         func contains(_ ip: UInt32) -> Bool {
-            return ip >= startIP && ip <= endIP
+            ip >= startIP && ip <= endIP
+        }
+
+        @inlinable
+        var rangeSize: UInt32 {
+            endIP - startIP
         }
     }
 
-    /// Sorted array of IP ranges
-    private var ipv4Ranges: [IPRangeEntry] = []
+    // MARK: - Properties
 
-    /// Statistics
+    /// Sorted array of IP ranges for binary search.
+    private var ranges: [IPRangeEntry] = []
+
+    /// Deduplicated name storage.
+    private var names: [String] = []
+
+    /// Statistics.
     private var overlappingRanges = 0
     private var nonPowerOf2Ranges = 0
 
     public init() {}
 
-    /// Build database from BGP data entries
-    public func buildFromBGPData(_ entries: [(startIP: String, endIP: String, asn: UInt32, name: String?)]) async {
-        var ranges: [IPRangeEntry] = []
+    // MARK: - Build Phase
+
+    /// Build database from BGP data entries.
+    public func buildFromBGPData(
+        _ entries: [(startIP: String, endIP: String, asn: UInt32, name: String?)]
+    ) {
+        // Build name index for deduplication
+        var nameToIndex: [String: Int32] = [:]
+        var tempRanges: [IPRangeEntry] = []
+        tempRanges.reserveCapacity(entries.count)
 
         for entry in entries {
-            guard let start = ipStringToUInt32(entry.startIP),
-                let end = ipStringToUInt32(entry.endIP)
+            guard let start = parseIPv4ToUInt32(entry.startIP),
+                let end = parseIPv4ToUInt32(entry.endIP)
             else {
                 continue
             }
 
-            // Check if range size is power of 2
+            // Track non-power-of-2 ranges
             let rangeSize = end - start + 1
-            if !isPowerOfTwo(rangeSize) {
+            if !rangeSize.isPowerOfTwo {
                 nonPowerOf2Ranges += 1
             }
 
-            ranges.append(
+            // Deduplicate names
+            let nameIndex: Int32
+            if let name = entry.name {
+                if let existingIndex = nameToIndex[name] {
+                    nameIndex = existingIndex
+                } else {
+                    nameIndex = Int32(names.count)
+                    names.append(name)
+                    nameToIndex[name] = nameIndex
+                }
+            } else {
+                nameIndex = -1
+            }
+
+            tempRanges.append(
                 IPRangeEntry(
                     startIP: start,
                     endIP: end,
                     asn: entry.asn,
-                    name: entry.name
+                    nameIndex: nameIndex
                 ))
         }
 
-        // Sort ranges by start IP, then end IP
-        ranges.sort()
+        // Sort by start IP, then end IP
+        tempRanges.sort()
 
         // Count overlaps
-        for index in 0..<ranges.count - 1 {
-            if ranges[index].endIP >= ranges[index + 1].startIP {
+        for i in 0..<(tempRanges.count - 1) {
+            if tempRanges[i].endIP >= tempRanges[i + 1].startIP {
                 overlappingRanges += 1
             }
         }
 
-        ipv4Ranges = ranges
-
-        print("📊 Database built with \(ranges.count) ranges")
-        print("   Overlapping ranges: \(overlappingRanges)")
-        print("   Non-power-of-2 ranges: \(nonPowerOf2Ranges)")
+        ranges = tempRanges
     }
 
-    /// Lookup ASN for an IP address using binary search
+    // MARK: - Lookup Phase
+
+    /// Look up ASN for an IPv4 address string.
     public func lookup(_ ipString: String) -> (asn: UInt32, name: String?)? {
-        guard let ip = ipStringToUInt32(ipString) else {
+        guard let ip = parseIPv4ToUInt32(ipString) else {
             return nil
         }
+        return lookup(ip: ip)
+    }
 
-        // Binary search to find all potential ranges
-        // First, find the last range with startIP <= ip
+    /// Look up ASN for an IPv4 address as UInt32.
+    /// Returns the most specific (smallest) matching range.
+    public func lookup(ip: UInt32) -> (asn: UInt32, name: String?)? {
+        guard !ranges.isEmpty else { return nil }
+
+        // Binary search to find the last range with startIP <= ip
         var left = 0
-        var right = ipv4Ranges.count - 1
+        var right = ranges.count - 1
         var foundIndex = -1
 
         while left <= right {
-            let mid = (left + right) / 2
+            let mid = (left + right) >> 1
 
-            if ipv4Ranges[mid].startIP <= ip {
+            if ranges[mid].startIP <= ip {
                 foundIndex = mid
                 left = mid + 1
             } else {
@@ -100,65 +145,56 @@ public actor SortedRangeDatabase {
             }
         }
 
-        // No range found
-        if foundIndex == -1 {
-            return nil
-        }
+        guard foundIndex >= 0 else { return nil }
 
-        // Check backwards from foundIndex to find all overlapping ranges
-        // that could contain this IP
-        var candidates: [IPRangeEntry] = []
+        // Find best (most specific) match among candidates
+        var bestMatch: IPRangeEntry?
+        var bestSize: UInt32 = .max
 
-        // Start from foundIndex and go backwards while ranges could still contain IP
+        // Check backwards from foundIndex
         var idx = foundIndex
-        while idx >= 0 {
-            if ipv4Ranges[idx].endIP < ip {
-                // This range ends before our IP, so no need to check further back
-                break
+        while idx >= 0 && ranges[idx].startIP <= ip {
+            let range = ranges[idx]
+            if range.contains(ip) && range.rangeSize < bestSize {
+                bestMatch = range
+                bestSize = range.rangeSize
             }
-            if ipv4Ranges[idx].contains(ip) {
-                candidates.append(ipv4Ranges[idx])
+            // Early exit: if we've gone past ranges that could contain ip
+            if range.endIP < ip && idx < foundIndex {
+                break
             }
             idx -= 1
         }
 
-        // Also check forward from foundIndex+1 in case of overlaps
+        // Check forwards from foundIndex+1 for overlapping ranges
         idx = foundIndex + 1
-        while idx < ipv4Ranges.count && ipv4Ranges[idx].startIP <= ip {
-            if ipv4Ranges[idx].contains(ip) {
-                candidates.append(ipv4Ranges[idx])
+        while idx < ranges.count && ranges[idx].startIP <= ip {
+            let range = ranges[idx]
+            if range.contains(ip) && range.rangeSize < bestSize {
+                bestMatch = range
+                bestSize = range.rangeSize
             }
             idx += 1
         }
 
-        // If multiple candidates (overlapping ranges), prefer:
-        // 1. Most specific (smallest range)
-        // 2. If same size, use the first one
-        if let bestMatch = candidates.min(by: {
-            let size1 = $0.endIP - $0.startIP
-            let size2 = $1.endIP - $1.startIP
-            return size1 < size2
-        }) {
-            return (bestMatch.asn, bestMatch.name)
-        }
+        guard let match = bestMatch else { return nil }
 
-        return nil
+        let name: String? = match.nameIndex >= 0 ? names[Int(match.nameIndex)] : nil
+        return (match.asn, name)
     }
 
-    /// Get database statistics
-    public func getStatistics() -> (totalRanges: Int, overlaps: Int, nonPowerOf2: Int) {
-        return (ipv4Ranges.count, overlappingRanges, nonPowerOf2Ranges)
+    // MARK: - Statistics
+
+    public func getStatistics() -> (totalRanges: Int, overlaps: Int, nonPowerOf2: Int, uniqueNames: Int) {
+        return (ranges.count, overlappingRanges, nonPowerOf2Ranges, names.count)
     }
+}
 
-    // MARK: - Helper functions
+// MARK: - UInt32 Extension
 
-    private func ipStringToUInt32(_ ip: String) -> UInt32? {
-        let parts = ip.split(separator: ".").compactMap { UInt32($0) }
-        guard parts.count == 4 else { return nil }
-        return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]
-    }
-
-    private func isPowerOfTwo(_ number: UInt32) -> Bool {
-        return number != 0 && (number & (number - 1)) == 0
+extension UInt32 {
+    @inlinable
+    var isPowerOfTwo: Bool {
+        self != 0 && (self & (self - 1)) == 0
     }
 }

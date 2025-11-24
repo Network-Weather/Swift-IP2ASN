@@ -17,7 +17,10 @@ final class ComprehensiveTest: XCTestCase {
             1.1.1.0	1.1.1.255	13335	US	CLOUDFLARENET Cloudflare Inc.
             23.185.0.0	23.185.0.255	20940	US	AKAMAI-ASN1 Akamai International B.V.
             140.82.112.0	140.82.127.255	36459	US	GITHUB GitHub Inc.
-            52.84.0.0	52.95.255.255	16509	US	AMAZON-02 Amazon.com Inc.
+            52.84.0.0	52.84.255.255	16509	US	AMAZON-02 Amazon.com Inc.
+            52.85.0.0	52.85.255.255	16509	US	AMAZON-02 Amazon.com Inc.
+            52.86.0.0	52.87.255.255	16509	US	AMAZON-02 Amazon.com Inc.
+            52.88.0.0	52.95.255.255	16509	US	AMAZON-02 Amazon.com Inc.
             93.184.216.0	93.184.216.255	15133	US	EDGECAST EdgeCast Networks
             """
 

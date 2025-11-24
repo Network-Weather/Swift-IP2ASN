@@ -1,17 +1,31 @@
 import Compression
 import Foundation
 
-/// Reader for compressed database format (delta-encoded and zlib-compressed)
-public struct CompressedDatabaseFormat {
+// MARK: - CompressedDatabaseFormat
 
-    /// Load compressed database into memory
+/// Reader for compressed database format (delta-encoded and zlib-compressed).
+///
+/// File Format:
+/// - Header: "IP2A" (4 bytes) + version (4 bytes LE) + count (4 bytes LE)
+/// - Ranges: For each range:
+///   - deltaStart varint (delta from previous start)
+///   - rangeSize varint (end - start)
+///   - asn varint
+///
+/// Compression: ZLIB
+public enum CompressedDatabaseFormat {
+
+    /// Load compressed database into memory.
     public static func loadCompressed(from path: String) throws -> CompactDatabase {
-        let compressedData = try Data(contentsOf: URL(fileURLWithPath: path))
+        let url = URL(fileURLWithPath: path)
+        let compressedData = try Data(contentsOf: url)
         let decompressed = try decompress(data: compressedData)
 
         return try CompactDatabase(data: decompressed)
     }
 
+    /// Decode a varint from Data at the given offset.
+    @inlinable
     static func decodeVarint(from data: Data, offset: inout Int) -> UInt32? {
         var result: UInt32 = 0
         var shift: UInt32 = 0
@@ -28,7 +42,7 @@ public struct CompressedDatabaseFormat {
 
             shift += 7
             if shift >= 32 {
-                return nil  // Overflow
+                return nil
             }
         }
 
@@ -36,30 +50,49 @@ public struct CompressedDatabaseFormat {
     }
 
     private static func decompress(data: Data) throws -> Data {
-        // Estimate decompressed size (10x is usually safe)
-        let destinationBufferSize = data.count * 10
-        let destinationBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: destinationBufferSize)
-        defer { destinationBuffer.deallocate() }
+        // Use adaptive buffer sizing
+        var bufferSize = data.count * 8
+        var attempts = 0
+        let maxAttempts = 3
 
-        let decompressedSize = compression_decode_buffer(
-            destinationBuffer, destinationBufferSize,
-            data.withUnsafeBytes { $0.bindMemory(to: UInt8.self).baseAddress! },
-            data.count,
-            nil, COMPRESSION_ZLIB
-        )
+        while attempts < maxAttempts {
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+            defer { buffer.deallocate() }
 
-        guard decompressedSize > 0 else {
-            throw CompressionError.decompressionFailed
+            let decompressedSize = data.withUnsafeBytes { srcBuffer -> Int in
+                compression_decode_buffer(
+                    buffer, bufferSize,
+                    srcBuffer.bindMemory(to: UInt8.self).baseAddress!,
+                    data.count,
+                    nil, COMPRESSION_ZLIB
+                )
+            }
+
+            if decompressedSize > 0 {
+                return Data(bytes: buffer, count: decompressedSize)
+            }
+
+            bufferSize *= 2
+            attempts += 1
         }
 
-        return Data(bytes: destinationBuffer, count: decompressedSize)
+        throw CompressionError.decompressionFailed
     }
-
 }
 
-/// Compact in-memory database loaded from compressed file
-public class CompactDatabase {
-    private var ranges: [(start: UInt32, end: UInt32, asn: UInt32)] = []
+// MARK: - CompactDatabase
+
+/// Thread-safe, immutable database loaded from compressed format.
+///
+/// After initialization, all data is immutable and lookups are safe
+/// to call from any thread without synchronization.
+public struct CompactDatabase: Sendable {
+    /// Stored as contiguous arrays for cache efficiency.
+    private let startIPs: [UInt32]
+    private let endIPs: [UInt32]
+    private let asns: [UInt32]
+
+    public var entryCount: Int { startIPs.count }
 
     init(data: Data) throws {
         // Verify magic
@@ -70,12 +103,24 @@ public class CompactDatabase {
         }
 
         // Read header
-        let version = data[4..<8].withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
-        let count = data[8..<12].withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
+        let version = data.withUnsafeBytes { buffer in
+            buffer.load(fromByteOffset: 4, as: UInt32.self).littleEndian
+        }
+        let count = data.withUnsafeBytes { buffer in
+            buffer.load(fromByteOffset: 8, as: UInt32.self).littleEndian
+        }
 
         guard version == 1 else {
             throw CompressionError.unsupportedVersion
         }
+
+        // Pre-allocate arrays
+        var startIPs: [UInt32] = []
+        var endIPs: [UInt32] = []
+        var asns: [UInt32] = []
+        startIPs.reserveCapacity(Int(count))
+        endIPs.reserveCapacity(Int(count))
+        asns.reserveCapacity(Int(count))
 
         // Decode entries
         var offset = 12
@@ -89,47 +134,53 @@ public class CompactDatabase {
                 throw CompressionError.corruptedData
             }
 
-            let start = prevStart + deltaStart
-            let end = start + rangeSize
+            let start = prevStart &+ deltaStart
+            let end = start &+ rangeSize
 
-            ranges.append((start, end, asn))
+            startIPs.append(start)
+            endIPs.append(end)
+            asns.append(asn)
+
             prevStart = start
         }
+
+        self.startIPs = startIPs
+        self.endIPs = endIPs
+        self.asns = asns
     }
 
+    /// Look up ASN for an IPv4 address string.
     public func lookup(_ ipString: String) -> UInt32? {
-        guard let ip = ipStringToUInt32(ipString) else { return nil }
+        guard let ip = parseIPv4ToUInt32(ipString) else { return nil }
+        return lookup(ip: ip)
+    }
 
-        // Binary search
+    /// Look up ASN for an IPv4 address as UInt32.
+    public func lookup(ip: UInt32) -> UInt32? {
         var left = 0
-        var right = ranges.count - 1
+        var right = startIPs.count - 1
 
         while left <= right {
-            let mid = (left + right) / 2
-            let range = ranges[mid]
+            let mid = (left + right) >> 1
+            let start = startIPs[mid]
+            let end = endIPs[mid]
 
-            if ip < range.start {
+            if ip < start {
                 right = mid - 1
-            } else if ip > range.end {
+            } else if ip > end {
                 left = mid + 1
             } else {
-                return range.asn
+                return asns[mid]
             }
         }
 
         return nil
     }
-
-    private func ipStringToUInt32(_ ip: String) -> UInt32? {
-        let parts = ip.split(separator: ".").compactMap { UInt32($0) }
-        guard parts.count == 4 else { return nil }
-        return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]
-    }
-
-    public var entryCount: Int { ranges.count }
 }
 
-enum CompressionError: Error {
+// MARK: - CompressionError
+
+public enum CompressionError: Error, Sendable {
     case compressionFailed
     case decompressionFailed
     case invalidFormat
