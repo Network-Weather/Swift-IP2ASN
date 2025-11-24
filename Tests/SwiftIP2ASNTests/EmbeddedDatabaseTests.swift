@@ -26,4 +26,35 @@ final class EmbeddedDatabaseTests: XCTestCase {
             XCTAssertEqual(result?.asn, expected, "\(ip) should be AS\(expected)")
         }
     }
+
+    func testRemoteDatabaseCaching() async throws {
+        // Use a temp directory for testing
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SwiftIP2ASNTest-\(UUID().uuidString)")
+
+        let remote = RemoteDatabase(cacheDirectory: tempDir)
+
+        // Should not be cached initially
+        let isCachedBefore = await remote.isCached()
+        XCTAssertFalse(isCachedBefore, "Should not be cached before first load")
+
+        // First load fetches from network
+        let db = try await remote.load()
+        XCTAssertGreaterThan(db.entryCount, 100_000, "Should have substantial entries")
+
+        // Should be cached now
+        let isCachedAfter = await remote.isCached()
+        XCTAssertTrue(isCachedAfter, "Should be cached after load")
+
+        // Verify lookups work
+        let result = db.lookup("8.8.8.8")
+        XCTAssertEqual(result?.asn, 15169, "Google DNS should be AS15169")
+
+        // Second load should use cache (no network)
+        let db2 = try await remote.load()
+        XCTAssertEqual(db2.entryCount, db.entryCount, "Cached DB should match")
+
+        // Cleanup
+        try? FileManager.default.removeItem(at: tempDir)
+    }
 }
