@@ -1,80 +1,115 @@
 # ``SwiftIP2ASN``
 
-A high-performance Swift library for IP address to ASN (Autonomous System Number) lookups using compressed trie data structures.
+A high-performance Swift library for IP address to ASN (Autonomous System Number) lookups.
 
 ## Overview
 
-SwiftIP2ASN provides microsecond-level lookup performance with no network access required after initial database construction. The library supports both IPv4 and IPv6 addresses and is built with Swift 6 concurrency features.
+SwiftIP2ASN provides microsecond-level lookup performance with comprehensive caching
+and automatic update support. The library supports both IPv4 and IPv6 addresses and
+is built with Swift 6 concurrency features.
 
 ### Key Features
 
-- **High Performance**: Microsecond-level lookup times using compressed trie data structures
-- **Dual Stack Support**: Full support for both IPv4 and IPv6 addresses  
-- **Swift 6 Ready**: Built with Swift 6 concurrency features and strict concurrency checking
-- **Offline Operation**: After initial database build, all lookups are performed locally
-- **Memory Efficient**: Uses compressed trie structures to minimize memory footprint
-- **Type Safe**: Leverages Swift's type system for safe IP address handling
+- **High Performance**: ~1 million lookups per second using binary search on sorted arrays
+- **Dual Stack Support**: Full support for both IPv4 and IPv6 addresses
+- **Swift 6 Ready**: Built with actors and Sendable types for thread-safe concurrent access
+- **Automatic Updates**: ``RemoteDatabase`` fetches updates from CDN with ETag-based caching
+- **Offline-First**: Apps can bundle a database for immediate offline functionality
+- **Memory Efficient**: ~3.4 MB compressed database covers 500K+ IP ranges
+
+## Getting Started
+
+### Quick Start with Embedded Database
+
+The simplest way to use SwiftIP2ASN is with the pre-built embedded database:
+
+```swift
+import SwiftIP2ASN
+
+// Load the embedded database (~3.4 MB, 500K+ IP ranges)
+let db = try EmbeddedDatabase.loadUltraCompact()
+
+// Perform lookups
+if let result = db.lookup("8.8.8.8") {
+    print("AS\(result.asn): \(result.name ?? "Unknown")")
+    // Output: AS15169: GOOGLE
+}
+```
+
+### Automatic Updates with RemoteDatabase
+
+For apps that need fresh data, use ``RemoteDatabase``:
+
+```swift
+let remote = RemoteDatabase()
+
+// First call downloads, subsequent calls use cache
+let db = try await remote.load()
+
+// Check for updates (HEAD request, ~200 bytes)
+switch try await remote.refresh() {
+case .alreadyCurrent:
+    print("Database is current")
+case .updated(let newDb):
+    print("Updated to \(newDb.entryCount) entries")
+}
+```
+
+### Offline-First Apps
+
+Ship a bundled database for immediate offline functionality:
+
+```swift
+let remote = RemoteDatabase(
+    bundledDatabasePath: Bundle.main.path(forResource: "ip2asn", ofType: "ultra")
+)
+
+// Works immediately, even offline
+let db = try await remote.load()
+
+// Check for updates in background
+Task { try? await remote.refresh() }
+```
 
 ## Topics
 
 ### Essentials
 
-- ``SwiftIP2ASN/SwiftIP2ASN``
-- ``ASNDatabase``
+- ``EmbeddedDatabase``
+- ``RemoteDatabase``
+- ``UltraCompactDatabase``
+
+### IP Address Types
+
 - ``IPAddress``
+- ``IPRange``
+
+### Database Building
+
+- ``ASNDatabase``
+- ``CompressedTrie``
 - ``ASNInfo``
 
-### Advanced Usage
+### Alternative Formats
 
-- ``CompressedTrie``
-- ``EmbeddedDatabase``
 - ``CompressedDatabaseFormat``
-- ``UltraCompactFormat``
-
-### Database Management
-
 - ``SortedRangeDatabase``
 - ``OptimizedDatabaseFormat``
 
-## Getting Started
-
-### Basic Lookup
-
-```swift
-import SwiftIP2ASN
-
-// Load from a prebuilt database
-let ip2asn = try await SwiftIP2ASN.load(from: databaseURL)
-
-// Lookup an IP address
-if let asnInfo = await ip2asn.lookup("8.8.8.8") {
-    print("ASN: \(asnInfo.asn)")
-    print("Country: \(asnInfo.countryCode ?? "Unknown")")
-    print("Registry: \(asnInfo.registry)")
-}
-
-// IPv6 lookup
-if let asnInfo = await ip2asn.lookup("2001:4860:4860::8888") {
-    print("ASN: \(asnInfo.asn)")
-}
-```
-
-### Using Embedded Database
-
-```swift
-import SwiftIP2ASN
-
-let db = try EmbeddedDatabase.loadUltraCompact()
-let result = db.lookup("8.8.8.8")
-```
-
 ## Performance
 
-The library uses a compressed trie data structure optimized for longest prefix matching:
+| Operation | Time |
+|-----------|------|
+| Lookup (binary search) | ~1 microsecond |
+| Load from disk | ~150 ms |
+| Download from CDN | ~2-3 seconds |
+| Refresh check (HEAD) | ~100 ms |
 
-- **Lookup Time**: O(32) for IPv4, O(128) for IPv6 (bit-level traversal)
-- **Memory Usage**: Compressed tries reduce memory footprint by up to 50%
-- **Lookup Performance**: Typical lookups complete in 1-10 microseconds
+## Data Sources
+
+The database is sourced from [iptoasn.com](https://iptoasn.com), which aggregates
+BGP routing data from global route collectors. The hosted database at
+`pkgs.networkweather.com` is updated daily.
 
 ## Requirements
 

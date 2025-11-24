@@ -1,16 +1,15 @@
 # SwiftIP2ASN
 
-A high-performance Swift 6 library for IP address to ASN (Autonomous System Number) lookups using compressed trie data structures. This library provides microsecond-level lookup performance with no network access required after initial database construction.
+A high-performance Swift 6 library for IP address to ASN (Autonomous System Number) lookups. Provides microsecond-level lookup performance with automatic database updates and offline-first support.
 
 ## Features
 
-- **High Performance**: Microsecond-level lookup times using compressed trie data structures
+- **High Performance**: ~1 million lookups per second using binary search on sorted arrays
 - **Dual Stack Support**: Full support for both IPv4 and IPv6 addresses
-- **Swift 6 Ready**: Built with Swift 6 concurrency features and strict concurrency checking
-- **Offline Operation**: After initial database build, all lookups are performed locally
-- **RIR Data Integration**: Automatically fetches and merges data from all five Regional Internet Registries (RIRs)
-- **Memory Efficient**: Uses compressed trie structures to minimize memory footprint
-- **Type Safe**: Leverages Swift's type system for safe IP address handling
+- **Swift 6 Ready**: Built with actors and Sendable types for thread-safe concurrent access
+- **Automatic Updates**: `RemoteDatabase` fetches updates from CDN with ETag-based caching
+- **Offline-First**: Apps can bundle a database for immediate offline functionality
+- **Memory Efficient**: ~3.4 MB compressed database covers 500K+ IP ranges
 
 ## Installation
 
@@ -20,134 +19,146 @@ Add the following to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.1.0")
+    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.2.0")
 ]
 ```
 
-## Usage
+## Quick Start
 
-### Basic Lookup
+### Using the Embedded Database
+
+The simplest way to get started - no network required:
 
 ```swift
 import SwiftIP2ASN
 
-// Build database from online RIR data
-let ip2asn = try await SwiftIP2ASN.buildFromOnlineData()
+// Load the embedded database (~3.4 MB, 500K+ IP ranges)
+let db = try EmbeddedDatabase.loadUltraCompact()
 
-// Lookup an IP address
-if let asnInfo = await ip2asn.lookup("8.8.8.8") {
-    print("ASN: \(asnInfo.asn)")
-    print("Country: \(asnInfo.countryCode ?? "Unknown")")
-    print("Registry: \(asnInfo.registry)")
-}
-
-// IPv6 lookup
-if let asnInfo = await ip2asn.lookup("2001:4860:4860::8888") {
-    print("ASN: \(asnInfo.asn)")
+// Perform lookups
+if let result = db.lookup("8.8.8.8") {
+    print("AS\(result.asn): \(result.name ?? "Unknown")")
+    // Output: AS15169: GOOGLE
 }
 ```
 
-### Persisting a Database (compressed file)
+### Automatic Updates with RemoteDatabase
 
-Note: The actor-based `ASNDatabase` in this package focuses on in-memory lookups.
-For persistence, use the provided compact on-disk formats and load-time readers.
+For apps that need fresh data:
 
-Example using the compressed delta-encoded format:
+```swift
+import SwiftIP2ASN
+
+let remote = RemoteDatabase()
+
+// First call downloads (~3.4 MB), subsequent calls use cache
+let db = try await remote.load()
+
+// Perform lookups
+if let result = db.lookup("8.8.8.8") {
+    print("AS\(result.asn): \(result.name ?? "Unknown")")
+}
+
+// Check for updates (HEAD request first, ~200 bytes)
+switch try await remote.refresh() {
+case .alreadyCurrent:
+    print("Database is up to date")
+case .updated(let newDb):
+    print("Updated to \(newDb.entryCount) entries")
+}
+```
+
+### Offline-First Apps
+
+Ship a bundled database for immediate offline functionality:
+
+```swift
+import SwiftIP2ASN
+
+let remote = RemoteDatabase(
+    bundledDatabasePath: Bundle.main.path(forResource: "ip2asn", ofType: "ultra")
+)
+
+// Works immediately, even offline (uses bundled database)
+let db = try await remote.load()
+
+// Check for updates in the background
+Task {
+    switch try await remote.refresh() {
+    case .alreadyCurrent:
+        break  // Already up to date
+    case .updated(let newDb):
+        // New database downloaded and cached
+        // Next load() will return the updated version
+        print("Updated to \(newDb.entryCount) entries")
+    }
+}
+```
+
+## Usage Examples
+
+### IPv4 and IPv6 Lookups
+
+```swift
+let db = try EmbeddedDatabase.loadUltraCompact()
+
+// IPv4
+if let result = db.lookup("1.1.1.1") {
+    print("Cloudflare: AS\(result.asn)")  // AS13335
+}
+
+// IPv4 by UInt32 (faster, no string parsing)
+let googleDNS: UInt32 = 0x08_08_08_08  // 8.8.8.8
+if let result = db.lookup(ip: googleDNS) {
+    print("Google: AS\(result.asn)")  // AS15169
+}
+```
+
+### Building a Custom Database
+
+For advanced use cases, build a database from BGP data:
 
 ```swift
 import SwiftIP2ASN
 import IP2ASNDataPrep
 
-// Create a compressed database from a TSV dump (startIP\tendIP\tasn\tcountry\tname)
-try CompressedDatabaseBuilder.createCompressed(from: "/path/to/ip2asn-v4.tsv", to: "/path/to/ip2asn.cdb")
+// Fetch and parse BGP data
+let fetcher = BGPDataFetcher()
+let rawData = try await fetcher.fetchIPv4Data()
 
-// Load the compressed database for fast lookups
-let db = try CompressedDatabaseFormat.loadCompressed(from: "/path/to/ip2asn.cdb")
+let parser = BGPDataParser()
+let mappings = parser.parseIPtoASNData(rawData)
 
-// Lookups
-let asn = db.lookup("8.8.8.8")  // -> UInt32?
-```
+// Build database
+let database = ASNDatabase()
+await database.buildWithBGPData(bgpEntries: mappings.map {
+    (range: $0.range, asn: $0.asn, name: $0.name)
+})
 
-Alternatively, see builder APIs in the `IP2ASNDataPrep` module (e.g., optimized/ultra-compact writers) and
-the corresponding readers in `SwiftIP2ASN` for different
-trade-offs between size, speed, and metadata.
-
-### Advanced Usage with IP Addresses
-
-```swift
-import SwiftIP2ASN
-
-// Create IP address objects directly
-let ipv4 = IPAddress(string: "192.168.1.1")!
-let ipv6 = IPAddress(string: "2001:db8::1")!
-
-let ip2asn = try await SwiftIP2ASN.buildFromOnlineData()
-
-// Lookup using IP address objects
-let result = await ip2asn.lookup(ipv4)
+// Lookup
+if let result = await database.lookup("8.8.8.8") {
+    print("ASN: \(result.asn)")
+}
 ```
 
 ### CLI Tools
 
-An executable `ip2asn-tools` is included for convenience:
+An executable `ip2asn-tools` is included for database management:
 
 ```bash
 # Build the tool
 swift build -c release
 
-# Create a compressed DB from a TSV file
-.build/release/ip2asn-tools build-compressed /path/to/ip2asn-v4.tsv /path/to/ip2asn.cdb
+# Create an ultra-compact database from TSV
+.build/release/ip2asn-tools build-ultra /path/to/ip2asn-v4.tsv output.ultra
 
-# Lookup an IP using the compressed DB
-.build/release/ip2asn-tools lookup-compressed /path/to/ip2asn.cdb 8.8.8.8
+# Lookup an IP
+.build/release/ip2asn-tools lookup-ultra output.ultra 8.8.8.8
+# Output: AS15169 GOOGLE
+
+# Benchmark load times
+.build/release/ip2asn-tools bench-ultra output.ultra 5
 ```
-
-### Embedded Database
-
-The library can ship with a prebuilt Ultra-Compact database as a SwiftPM resource.
-
-- Place the file at: `Sources/SwiftIP2ASN/Resources/ip2asn.ultra`
-- Access from your app:
-
-```swift
-import SwiftIP2ASN
-
-let db = try EmbeddedDatabase.loadUltraCompact()
-let result = db.lookup("8.8.8.8")
-```
-
-Rebuilding the embedded database from TSV:
-
-```bash
-swift build -c release
-.build/release/ip2asn-tools build-ultra /path/to/ip2asn-v4.tsv Sources/SwiftIP2ASN/Resources/ip2asn.ultra
-```
-
-On release, you can also attach the same `ip2asn.ultra` as a GitHub Release asset.
-
-## Benchmarking
-
-You can benchmark database load times using the included CLI. This measures the time to
-read the on-disk file, decompress, and construct the in-memory structures.
-
-- Ultra-Compact format:
-  - Build: `.build/release/ip2asn-tools build-ultra /path/to/ip2asn-v4.tsv /tmp/ip2asn.ultra`
-  - Bench: `.build/release/ip2asn-tools bench-ultra /tmp/ip2asn.ultra 5`
-- Compressed format (optional comparison):
-  - Build: `.build/release/ip2asn-tools build-compressed /path/to/ip2asn-v4.tsv /tmp/ip2asn.cdb`
-  - Bench: `.build/release/ip2asn-tools bench-compressed /tmp/ip2asn.cdb 5`
-
-Example output (Ultra-Compact):
-
-```
-UltraCompact load: avg=35.82 ms, min=35.12 ms, max=37.33 ms over 5 iters
-```
-
-Notes:
-- These numbers are warm-start (OS cache) and intended as a practical guide. Cold starts will be
-  slower; warm starts reflect normal app restarts.
-- We recommend Ultra-Compact as the default for apps; it minimizes on-disk size with a modest
-  one-time decode cost at startup. Lookups are microsecond-level thereafter.
 
 ### Working with IP Ranges
 
@@ -162,74 +173,69 @@ if range.contains(ip) {
 }
 ```
 
-### Database Statistics
-
-```swift
-let stats = await ip2asn.getStatistics()
-print("Total nodes: \(stats.totalNodes)")
-print("IPv4 entries: \(stats.ipv4Entries)")
-print("IPv6 entries: \(stats.ipv6Entries)")
-```
-
-## Data Sources
-
-The library fetches data from the following Regional Internet Registries:
-
-- **ARIN** (American Registry for Internet Numbers)
-- **RIPE NCC** (Réseaux IP Européens Network Coordination Centre)
-- **APNIC** (Asia-Pacific Network Information Centre)
-- **LACNIC** (Latin America and Caribbean Network Information Centre)
-- **AFRINIC** (African Network Information Centre)
-
-Data is fetched from the delegated-extended statistics files provided by each RIR.
-
 ## Performance
 
-The library uses a compressed trie data structure optimized for longest prefix matching:
+| Operation | Time |
+|-----------|------|
+| Lookup (binary search) | ~1 microsecond |
+| Load from disk | ~150 ms |
+| Download from CDN | ~2-3 seconds |
+| Refresh check (HEAD) | ~100 ms |
 
-- **Lookup Time**: O(32) for IPv4, O(128) for IPv6 (bit-level traversal)
-- **Memory Usage**: Compressed tries reduce memory footprint by up to 50%
-- **Build Time**: Initial database construction takes 10-30 seconds depending on network speed
-- **Lookup Performance**: Typical lookups complete in 1-10 microseconds
+The library uses a binary search on sorted contiguous arrays, providing excellent cache locality and O(log n) lookup performance.
 
 ## Architecture
 
+### Modules
+
+- **SwiftIP2ASN**: Core library with lookup functionality
+- **IP2ASNDataPrep**: Tools for fetching, parsing, and building databases
+
 ### Core Components
 
-1. **IPAddress**: Type-safe representation of IPv4 and IPv6 addresses
-2. **CompressedTrie**: High-performance trie implementation with path compression
-3. **ASNDatabase**: Main database actor managing the trie and providing lookup functionality
-4. **RIRDataFetcher**: Async/await based fetcher for RIR delegation files
-5. **RIRDataParser**: Parser for RIR extended delegation format
+1. **UltraCompactDatabase**: High-performance lookup using sorted arrays
+2. **RemoteDatabase**: Manages automatic updates with persistent caching
+3. **EmbeddedDatabase**: Access to the bundled database resource
+4. **IPAddress/IPRange**: Type-safe IP address representations
+5. **CompressedTrie**: Alternative trie-based lookup structure
 
-### Concurrency
+### Thread Safety
 
-The library uses Swift's actor model for thread-safe database access:
+All database types are `Sendable` and safe for concurrent access:
+- `UltraCompactDatabase` is an immutable struct
+- `RemoteDatabase` is an actor with isolated state
+- `ASNDatabase` is an actor for thread-safe mutations
 
-- `ASNDatabase` is an actor ensuring thread-safe access
-- All network operations use async/await
-- Supports concurrent fetching from multiple RIRs
+## Data Sources
+
+The library uses data from [iptoasn.com](https://iptoasn.com), which aggregates BGP routing information from global route collectors. The hosted database at `pkgs.networkweather.com` is updated daily.
 
 ## Requirements
 
 - Swift 6.0+
 - macOS 13.0+ / iOS 16.0+ / tvOS 16.0+ / watchOS 9.0+
 
-Note: Some tests involve external data or tools and are skipped by default. The core
-unit tests run offline and complete in under a second.
-
 ## Testing
 
-Run the test suite:
-
 ```bash
+# Run all tests
 swift test
+
+# Run specific test suites
+swift test --filter RemoteDatabaseTests
+swift test --filter EmbeddedDatabaseTests
 ```
 
-Run with coverage:
+Note: Some tests require network access. Core unit tests run offline.
+
+## Documentation
+
+Full API documentation is available at: https://swift-ip2asn.networkweather.com
+
+Generate documentation locally:
 
 ```bash
-swift test --enable-code-coverage
+swift package generate-documentation --target SwiftIP2ASN
 ```
 
 ## Contributing
@@ -248,9 +254,9 @@ This project is available under the MIT license. See the LICENSE file for more i
 
 ## Acknowledgments
 
-- Data provided by the five Regional Internet Registries
+- Data provided by [iptoasn.com](https://iptoasn.com)
 - Built with Swift 6 and modern concurrency features
-- Inspired by the need for high-performance IP geolocation in Swift
+- CDN hosting provided by Cloudflare R2
 
 ## Support
 

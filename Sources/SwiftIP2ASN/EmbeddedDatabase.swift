@@ -2,16 +2,69 @@ import Foundation
 
 // MARK: - EmbeddedDatabase
 
-/// Access to embedded database resources bundled with the package.
+/// Provides access to the IP2ASN database bundled with the SwiftIP2ASN package.
+///
+/// This enum offers a simple way to load the pre-built database that ships with the library.
+/// For apps that need automatic updates, see ``RemoteDatabase`` instead.
+///
+/// ## Overview
+///
+/// The embedded database contains IP-to-ASN mappings from [iptoasn.com](https://iptoasn.com),
+/// which aggregates BGP routing data. It's updated periodically with library releases.
+///
+/// ## Usage
+///
+/// ```swift
+/// import SwiftIP2ASN
+///
+/// // Load the embedded database
+/// let db = try EmbeddedDatabase.loadUltraCompact()
+///
+/// // Perform lookups
+/// if let result = db.lookup("8.8.8.8") {
+///     print("AS\(result.asn): \(result.name ?? "Unknown")")
+///     // Output: AS15169: GOOGLE
+/// }
+/// ```
+///
+/// ## Topics
+///
+/// ### Loading the Database
+///
+/// - ``loadUltraCompact()``
+///
+/// ### Errors
+///
+/// - ``Error``
 public enum EmbeddedDatabase {
+
+    /// Errors that can occur when loading or fetching databases.
     public enum Error: Swift.Error, Sendable {
+        /// The embedded database resource was not found in the bundle.
         case resourceNotFound
+
+        /// A network request failed with the given error message.
         case downloadFailed(String)
+
+        /// The server returned an empty or invalid response.
         case invalidResponse
     }
 
     /// Loads the embedded Ultra-Compact database shipped as a SwiftPM resource.
-    /// Place the file at `Sources/SwiftIP2ASN/Resources/ip2asn.ultra`.
+    ///
+    /// The database file is located at `Sources/SwiftIP2ASN/Resources/ip2asn.ultra`
+    /// and is included automatically when you add SwiftIP2ASN as a dependency.
+    ///
+    /// - Returns: An ``UltraCompactDatabase`` ready for IP lookups.
+    /// - Throws: ``Error/resourceNotFound`` if the database file is missing.
+    ///
+    /// ## Example
+    ///
+    /// ```swift
+    /// let db = try EmbeddedDatabase.loadUltraCompact()
+    /// print("Loaded \(db.entryCount) IP ranges")
+    /// print("Covering \(db.uniqueASNCount) unique ASNs")
+    /// ```
     public static func loadUltraCompact() throws -> UltraCompactDatabase {
         guard let url = Bundle.module.url(forResource: "ip2asn", withExtension: "ultra") else {
             throw Error.resourceNotFound
@@ -22,21 +75,91 @@ public enum EmbeddedDatabase {
 
 // MARK: - RemoteDatabase
 
-/// Fetches and caches the IP2ASN database from a remote URL.
+/// Fetches, caches, and manages IP2ASN database updates from a remote server.
 ///
-/// The database is cached permanently to disk and NEVER re-fetched once downloaded.
-/// Use `refresh()` to check for updates (issues HEAD request, only downloads if changed).
+/// `RemoteDatabase` provides automatic database management with these key features:
+/// - **Persistent caching**: Downloads once, uses forever (until you call ``refresh()``)
+/// - **Efficient updates**: Uses HTTP ETag/Last-Modified headers to avoid re-downloading unchanged data
+/// - **Offline-first support**: Apps can bundle a database for immediate offline use
 ///
-/// Apps can ship with a bundled database for offline-first operation:
+/// ## Overview
+///
+/// The database is fetched from [pkgs.networkweather.com](https://pkgs.networkweather.com)
+/// by default, which hosts daily-updated BGP routing data from iptoasn.com.
+///
+/// ## Basic Usage
+///
+/// ```swift
+/// let remote = RemoteDatabase()
+///
+/// // First call downloads (~3.4 MB), subsequent calls use cache
+/// let db = try await remote.load()
+///
+/// // Perform lookups
+/// if let result = db.lookup("8.8.8.8") {
+///     print("AS\(result.asn): \(result.name ?? "Unknown")")
+/// }
+/// ```
+///
+/// ## Checking for Updates
+///
+/// ```swift
+/// // Issues HEAD request first (~200 bytes), only downloads if changed
+/// switch try await remote.refresh() {
+/// case .alreadyCurrent:
+///     print("Database is up to date")
+/// case .updated(let newDb):
+///     print("Downloaded new database with \(newDb.entryCount) entries")
+/// }
+/// ```
+///
+/// ## Offline-First Apps
+///
+/// Apps can ship with a bundled database for immediate offline functionality:
+///
 /// ```swift
 /// let remote = RemoteDatabase(
 ///     bundledDatabasePath: Bundle.main.path(forResource: "ip2asn", ofType: "ultra")
 /// )
-/// let db = try await remote.load()  // Uses bundled DB if no cache exists
-/// try await remote.refresh()         // Check for updates in background
+///
+/// // Works immediately, even offline
+/// let db = try await remote.load()
+///
+/// // Check for updates in the background
+/// Task {
+///     try? await remote.refresh()
+/// }
 /// ```
+///
+/// ## Thread Safety
+///
+/// `RemoteDatabase` is an actor, ensuring all operations are thread-safe.
+/// You can safely call methods from multiple tasks concurrently.
+///
+/// ## Topics
+///
+/// ### Creating a RemoteDatabase
+///
+/// - ``init(remoteURL:cacheDirectory:bundledDatabasePath:)``
+/// - ``defaultURL``
+///
+/// ### Loading and Refreshing
+///
+/// - ``load()``
+/// - ``refresh()``
+/// - ``RefreshResult``
+///
+/// ### Cache Management
+///
+/// - ``isCached()``
+/// - ``cachePath()``
+/// - ``clearCache()``
 public actor RemoteDatabase {
-    /// Default URL for the latest IP2ASN database.
+
+    /// The default URL for fetching the IP2ASN database.
+    ///
+    /// Points to `https://pkgs.networkweather.com/db/ip2asn.ultra`, which is
+    /// updated daily with fresh BGP routing data.
     public static let defaultURL = URL(string: "https://pkgs.networkweather.com/db/ip2asn.ultra")!
 
     private let cacheURL: URL
@@ -45,13 +168,31 @@ public actor RemoteDatabase {
     private let bundledDatabasePath: String?
     private var cachedDatabase: UltraCompactDatabase?
 
-    /// Creates a RemoteDatabase fetcher.
+    /// Creates a new RemoteDatabase instance.
+    ///
     /// - Parameters:
-    ///   - remoteURL: URL to fetch the database from (defaults to pkgs.networkweather.com)
-    ///   - cacheDirectory: Directory to store the cached database (defaults to Application Support)
-    ///   - bundledDatabasePath: Path to a database bundled with the app. Used as fallback when no
-    ///     cached database exists, allowing offline-first operation. The app can later call
-    ///     `refresh()` to check for updates.
+    ///   - remoteURL: The URL to fetch the database from. Defaults to ``defaultURL``.
+    ///   - cacheDirectory: Directory for storing the cached database. Defaults to
+    ///     `~/Library/Application Support/SwiftIP2ASN/` on macOS.
+    ///   - bundledDatabasePath: Optional path to a database file bundled with your app.
+    ///     When provided, ``load()`` will use this file if no cached download exists,
+    ///     enabling offline-first operation.
+    ///
+    /// ## Example: Custom Cache Location
+    ///
+    /// ```swift
+    /// let cacheDir = FileManager.default.temporaryDirectory
+    ///     .appendingPathComponent("MyApp/IP2ASN")
+    /// let remote = RemoteDatabase(cacheDirectory: cacheDir)
+    /// ```
+    ///
+    /// ## Example: Bundled Database
+    ///
+    /// ```swift
+    /// let remote = RemoteDatabase(
+    ///     bundledDatabasePath: Bundle.main.path(forResource: "ip2asn", ofType: "ultra")
+    /// )
+    /// ```
     public init(
         remoteURL: URL = RemoteDatabase.defaultURL,
         cacheDirectory: URL? = nil,
@@ -71,13 +212,27 @@ public actor RemoteDatabase {
         self.metadataURL = cacheDir.appendingPathComponent("ip2asn.meta.json")
     }
 
-    /// Loads the database using this priority:
-    /// 1. In-memory cache (if already loaded)
-    /// 2. Disk cache (from previous download)
-    /// 3. Bundled database (if provided in init)
-    /// 4. Remote fetch (downloads from network)
+    /// Loads the IP2ASN database, fetching from network only if necessary.
     ///
-    /// Once loaded, the database is cached in memory. Call `refresh()` to check for updates.
+    /// The database is loaded using this priority order:
+    /// 1. **In-memory cache**: Returns immediately if already loaded
+    /// 2. **Disk cache**: Loads from a previous download
+    /// 3. **Bundled database**: Uses the file specified in `bundledDatabasePath`
+    /// 4. **Network fetch**: Downloads from `remoteURL` (requires network)
+    ///
+    /// Once loaded, the database is cached in memory for fast subsequent access.
+    /// Call ``refresh()`` to check for updates.
+    ///
+    /// - Returns: An ``UltraCompactDatabase`` ready for IP lookups.
+    /// - Throws: ``EmbeddedDatabase/Error/downloadFailed(_:)`` if network fetch fails.
+    ///
+    /// ## Example
+    ///
+    /// ```swift
+    /// let remote = RemoteDatabase()
+    /// let db = try await remote.load()
+    /// print("Loaded \(db.entryCount) IP ranges")
+    /// ```
     public func load() async throws -> UltraCompactDatabase {
         // Return in-memory cache if available
         if let db = cachedDatabase {
@@ -104,19 +259,43 @@ public actor RemoteDatabase {
         return try await fetchAndCache()
     }
 
-    /// Result of a refresh check.
+    /// The result of a ``refresh()`` operation.
     public enum RefreshResult: Sendable {
+        /// The cached database is already current; no download was needed.
         case alreadyCurrent
+
+        /// A new database was downloaded and is now cached.
         case updated(UltraCompactDatabase)
     }
 
-    /// Checks for updates and downloads only if the remote database has changed.
-    /// Uses ETag/Last-Modified headers to avoid unnecessary downloads.
+    /// Checks for database updates and downloads only if the remote has changed.
     ///
-    /// If using a bundled database (no previous download), this will always download
-    /// since we don't know the bundled database's version.
+    /// This method uses HTTP ETag and Last-Modified headers to efficiently check
+    /// for updates. The typical flow is:
+    /// 1. Send HEAD request (~200 bytes)
+    /// 2. Compare ETag/Last-Modified with stored metadata
+    /// 3. Download only if changed (~3.4 MB)
     ///
-    /// - Returns: `.alreadyCurrent` if no update needed, `.updated(db)` if new database was downloaded
+    /// If using a bundled database (no previous download metadata), this will
+    /// always download since the bundled version cannot be compared.
+    ///
+    /// - Returns: ``RefreshResult/alreadyCurrent`` if no update needed,
+    ///   or ``RefreshResult/updated(_:)`` with the new database if downloaded.
+    /// - Throws: ``EmbeddedDatabase/Error/downloadFailed(_:)`` if the request fails.
+    ///
+    /// ## Example
+    ///
+    /// ```swift
+    /// // Check for updates in the background
+    /// Task {
+    ///     switch try await remote.refresh() {
+    ///     case .alreadyCurrent:
+    ///         print("Already up to date")
+    ///     case .updated(let db):
+    ///         print("Updated to \(db.entryCount) entries")
+    ///     }
+    /// }
+    /// ```
     @discardableResult
     public func refresh() async throws -> RefreshResult {
         // Load stored metadata (ETag/Last-Modified from previous download)
@@ -156,12 +335,23 @@ public actor RemoteDatabase {
         return .updated(db)
     }
 
-    /// Returns true if a cached database exists on disk.
+    /// Returns whether a downloaded database cache exists on disk.
+    ///
+    /// This does not check for bundled databases, only for previously downloaded ones.
+    ///
+    /// - Returns: `true` if a cached database file exists.
     public func isCached() -> Bool {
         FileManager.default.fileExists(atPath: cacheURL.path)
     }
 
-    /// Deletes the cached database, forcing a re-fetch on next load().
+    /// Deletes the cached database and metadata from disk.
+    ///
+    /// After calling this method:
+    /// - ``isCached()`` will return `false`
+    /// - ``load()`` will use the bundled database (if provided) or fetch from network
+    /// - ``refresh()`` will always download (no metadata to compare)
+    ///
+    /// - Throws: If file deletion fails.
     public func clearCache() throws {
         cachedDatabase = nil
         if FileManager.default.fileExists(atPath: cacheURL.path) {
@@ -172,7 +362,9 @@ public actor RemoteDatabase {
         }
     }
 
-    /// Returns the path to the cached database file, if it exists.
+    /// Returns the file path of the cached database, if it exists.
+    ///
+    /// - Returns: The absolute path to the cached `.ultra` file, or `nil` if not cached.
     public func cachePath() -> String? {
         FileManager.default.fileExists(atPath: cacheURL.path) ? cacheURL.path : nil
     }
