@@ -54,6 +54,17 @@ final class EmbeddedDatabaseTests: XCTestCase {
         let db2 = try await remote.load()
         XCTAssertEqual(db2.entryCount, db.entryCount, "Cached DB should match")
 
+        // Refresh should report already current (HEAD request only, no download)
+        let refreshResult = try await remote.refresh()
+        switch refreshResult {
+        case .alreadyCurrent:
+            break  // Expected
+        case .updated:
+            XCTFail("Should not have downloaded again - database hasn't changed")
+        case .noCacheToRefresh:
+            XCTFail("Cache should exist")
+        }
+
         // Cleanup
         try? FileManager.default.removeItem(at: tempDir)
     }
