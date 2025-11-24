@@ -19,21 +19,21 @@ Add the following to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.2.0")
+    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.2.1")
 ]
 ```
 
 ## Quick Start
 
-### Using the Embedded Database
+### Simple API (Recommended)
 
-The simplest way to get started - no network required:
+The easiest way to get started:
 
 ```swift
 import SwiftIP2ASN
 
-// Load the embedded database (~3.4 MB, 500K+ IP ranges)
-let db = try EmbeddedDatabase.loadUltraCompact()
+// Load embedded database (no network required)
+let db = try IP2ASN.embedded()
 
 // Perform lookups
 if let result = db.lookup("8.8.8.8") {
@@ -42,25 +42,22 @@ if let result = db.lookup("8.8.8.8") {
 }
 ```
 
-### Automatic Updates with RemoteDatabase
+### Automatic Updates from CDN
 
 For apps that need fresh data:
 
 ```swift
 import SwiftIP2ASN
 
-let remote = RemoteDatabase()
-
 // First call downloads (~3.4 MB), subsequent calls use cache
-let db = try await remote.load()
+let db = try await IP2ASN.remote()
 
-// Perform lookups
 if let result = db.lookup("8.8.8.8") {
     print("AS\(result.asn): \(result.name ?? "Unknown")")
 }
 
 // Check for updates (HEAD request first, ~200 bytes)
-switch try await remote.refresh() {
+switch try await IP2ASN.refresh() {
 case .alreadyCurrent:
     print("Database is up to date")
 case .updated(let newDb):
@@ -75,23 +72,33 @@ Ship a bundled database for immediate offline functionality:
 ```swift
 import SwiftIP2ASN
 
+// Works immediately, even offline
+let db = try await IP2ASN.remote(
+    bundledPath: Bundle.main.path(forResource: "ip2asn", ofType: "ultra")
+)
+
+// Check for updates in background
+Task { try? await IP2ASN.refresh() }
+```
+
+### Advanced: Direct RemoteDatabase Usage
+
+For more control over caching and state:
+
+```swift
+import SwiftIP2ASN
+
 let remote = RemoteDatabase(
     bundledDatabasePath: Bundle.main.path(forResource: "ip2asn", ofType: "ultra")
 )
 
-// Works immediately, even offline (uses bundled database)
 let db = try await remote.load()
 
-// Check for updates in the background
-Task {
-    switch try await remote.refresh() {
-    case .alreadyCurrent:
-        break  // Already up to date
-    case .updated(let newDb):
-        // New database downloaded and cached
-        // Next load() will return the updated version
-        print("Updated to \(newDb.entryCount) entries")
-    }
+switch try await remote.refresh() {
+case .alreadyCurrent:
+    break
+case .updated(let newDb):
+    print("Updated to \(newDb.entryCount) entries")
 }
 ```
 

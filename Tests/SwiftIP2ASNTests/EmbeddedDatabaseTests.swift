@@ -17,7 +17,7 @@ final class EmbeddedDatabaseTests: XCTestCase {
             ("8.8.8.8", 15169),  // Google
             ("1.1.1.1", 13335),  // Cloudflare
             ("52.84.228.25", 16509),  // Amazon CloudFront
-            ("140.82.121.3", 36459),  // GitHub
+            ("140.82.121.3", 36459)  // GitHub
         ]
 
         for (ip, expected) in cases {
@@ -25,6 +25,70 @@ final class EmbeddedDatabaseTests: XCTestCase {
             XCTAssertNotNil(result, "Embedded DB should contain \(ip)")
             XCTAssertEqual(result?.asn, expected, "\(ip) should be AS\(expected)")
         }
+    }
+}
+
+// MARK: - IP2ASN Simple API Tests
+
+final class IP2ASNSimpleAPITests: XCTestCase {
+
+    func testIP2ASNEmbedded() throws {
+        // Test the simple embedded() API
+        let db = try IP2ASN.embedded()
+
+        XCTAssertGreaterThan(db.entryCount, 100_000, "Should have substantial entries")
+
+        // Test lookups
+        let google = db.lookup("8.8.8.8")
+        XCTAssertNotNil(google)
+        XCTAssertEqual(google?.asn, 15169)
+
+        let cloudflare = db.lookup("1.1.1.1")
+        XCTAssertNotNil(cloudflare)
+        XCTAssertEqual(cloudflare?.asn, 13335)
+    }
+
+    func testIP2ASNRemote() async throws {
+        // Test the simple remote() API
+        let db = try await IP2ASN.remote()
+
+        XCTAssertGreaterThan(db.entryCount, 100_000, "Should have substantial entries")
+
+        // Test lookup
+        let google = db.lookup("8.8.8.8")
+        XCTAssertNotNil(google)
+        XCTAssertEqual(google?.asn, 15169)
+
+        // Test that cache exists after load
+        let cached = await IP2ASN.isCached()
+        XCTAssertTrue(cached, "Should be cached after remote load")
+    }
+
+    func testIP2ASNRefresh() async throws {
+        // First load
+        _ = try await IP2ASN.remote()
+
+        // Refresh should report already current (no changes)
+        let result = try await IP2ASN.refresh()
+        switch result {
+        case .alreadyCurrent:
+            break  // Expected
+        case .updated:
+            break  // Also acceptable if CDN updated
+        }
+    }
+
+    func testUltraCompactDatabaseIsSendable() async throws {
+        // Verify UltraCompactDatabase can be passed across actor boundaries
+        let db = try IP2ASN.embedded()
+
+        // Pass to a detached task (crosses actor boundary)
+        let result = await Task.detached {
+            // This compiles only if UltraCompactDatabase is Sendable
+            return db.lookup("8.8.8.8")?.asn
+        }.value
+
+        XCTAssertEqual(result, 15169, "Should work across actor boundaries")
     }
 }
 
@@ -287,7 +351,7 @@ final class RemoteDatabaseTests: XCTestCase {
             ("1.1.1.1", 13335, "Cloudflare DNS"),
             ("140.82.121.3", 36459, "GitHub"),
             ("157.240.22.35", 32934, "Facebook/Meta"),
-            ("17.253.144.10", 714, "Apple"),
+            ("17.253.144.10", 714, "Apple")
         ]
 
         for (ip, expectedASN, description) in testCases {
@@ -333,7 +397,7 @@ final class RemoteDatabaseTests: XCTestCase {
 
         // Generate random IPs for testing
         let testIPs: [UInt32] = (0..<1000).map { _ in
-            UInt32.random(in: 0x01000000...0xDF000000)
+            UInt32.random(in: 0x0100_0000...0xDF00_0000)
         }
 
         measure {

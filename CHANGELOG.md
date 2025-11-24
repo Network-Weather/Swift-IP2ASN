@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2025-11-24
+
+### Added
+- **Simple `IP2ASN` API**: New top-level enum for the easiest possible usage
+  ```swift
+  let db = try IP2ASN.embedded()           // Sync, no network
+  let db = try await IP2ASN.remote()       // Async, auto-updates from CDN
+  let db = try await IP2ASN.remote(bundledPath: path)  // Offline-first
+  ```
+- Tests verifying `UltraCompactDatabase` works across actor boundaries
+
+### Fixed
+- **`UltraCompactDatabase` is now `Sendable`**: Changed from class to struct
+  - Can now be safely passed across actor boundaries
+  - Required for Swift 6 strict concurrency
+
+### Changed
+- `SwiftIP2ASN` struct marked as legacy; prefer new `IP2ASN` API
+
 ## [0.2.0] - 2025-11-24
 
 ### Added
