@@ -24,8 +24,7 @@ let package = Package(
         .target(
             name: "SwiftIP2ASN",
             resources: [
-                // Place the shipping database at Sources/SwiftIP2ASN/Resources/ip2asn.ultra
-                .process("Resources")
+                .process("Resources/ip2asn.ultra")
             ]
         ),
         .target(

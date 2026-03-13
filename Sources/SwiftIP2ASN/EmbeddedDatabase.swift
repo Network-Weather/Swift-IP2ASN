@@ -55,6 +55,7 @@ public enum EmbeddedDatabase {
     /// The database file is located at `Sources/SwiftIP2ASN/Resources/ip2asn.ultra`
     /// and is included automatically when you add SwiftIP2ASN as a dependency.
     ///
+    /// - Parameter bundle: The bundle to load the resource from. Defaults to `.module`.
     /// - Returns: An ``UltraCompactDatabase`` ready for IP lookups.
     /// - Throws: ``Error/resourceNotFound`` if the database file is missing.
     ///
@@ -65,8 +66,8 @@ public enum EmbeddedDatabase {
     /// print("Loaded \(db.entryCount) IP ranges")
     /// print("Covering \(db.uniqueASNCount) unique ASNs")
     /// ```
-    public static func loadUltraCompact() throws -> UltraCompactDatabase {
-        guard let url = Bundle.module.url(forResource: "ip2asn", withExtension: "ultra") else {
+    public static func loadUltraCompact(from bundle: Bundle? = .safeModule) throws -> UltraCompactDatabase {
+        guard let url = bundle?.url(forResource: "ip2asn", withExtension: "ultra") else {
             throw Error.resourceNotFound
         }
         return try UltraCompactDatabase(path: url.path)
