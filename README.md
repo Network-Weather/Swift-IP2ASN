@@ -19,7 +19,7 @@ Add the following to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.2.1")
+    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.3.0")
 ]
 ```
 
