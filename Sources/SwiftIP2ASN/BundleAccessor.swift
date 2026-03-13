@@ -20,6 +20,7 @@ extension Foundation.Bundle {
     public static var safeModule: Bundle? {
         let bundleName = "SwiftIP2ASN_SwiftIP2ASN"
 
+        // Standard SPM candidate paths
         let candidates = [
             Bundle.main.resourceURL,
             Bundle(for: BundleFinder.self).resourceURL,
@@ -31,6 +32,9 @@ extension Foundation.Bundle {
             Bundle(for: BundleFinder.self).resourceURL?
                 .deletingLastPathComponent()
                 .deletingLastPathComponent(),
+            // Additional paths for non-standard layouts (.pkg installs, Sparkle updates)
+            Bundle.main.privateFrameworksURL,
+            Bundle.main.sharedFrameworksURL,
         ]
 
         for candidate in candidates {
@@ -38,6 +42,12 @@ extension Foundation.Bundle {
             if let bundle = bundlePath.flatMap(Bundle.init(url:)) {
                 return bundle
             }
+        }
+
+        // Last resort: ask the main bundle directly (handles nested/relocated bundles)
+        if let url = Bundle.main.url(forResource: bundleName, withExtension: "bundle"),
+           let bundle = Bundle(url: url) {
+            return bundle
         }
 
         return nil
