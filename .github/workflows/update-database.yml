@@ -1,0 +1,61 @@
+name: Update IP2ASN Database
+
+on:
+  schedule:
+    # Every Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-database:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build CLI
+        run: swift build -c release
+
+      - name: Download latest TSV
+        run: curl -sL https://iptoasn.com/data/ip2asn-v4.tsv.gz | gunzip > /tmp/ip2asn-v4.tsv
+
+      - name: Build ultra-compact database
+        run: .build/release/ip2asn-tools build-ultra /tmp/ip2asn-v4.tsv Sources/SwiftIP2ASN/Resources/ip2asn.ultra
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet Sources/SwiftIP2ASN/Resources/ip2asn.ultra; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            OLD_SIZE=$(git show HEAD:Sources/SwiftIP2ASN/Resources/ip2asn.ultra | wc -c | tr -d ' ')
+            NEW_SIZE=$(wc -c < Sources/SwiftIP2ASN/Resources/ip2asn.ultra | tr -d ' ')
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "old_size=$OLD_SIZE" >> "$GITHUB_OUTPUT"
+            echo "new_size=$NEW_SIZE" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run tests
+        if: steps.diff.outputs.changed == 'true'
+        run: swift test --filter EmbeddedDatabaseTests
+
+      - name: Create Pull Request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "Update embedded IP2ASN database"
+          branch: chore/auto-update-database
+          title: "Update embedded IP2ASN database"
+          body: |
+            Automated weekly database update from [iptoasn.com](https://iptoasn.com).
+
+            - Source: `ip2asn-v4.tsv.gz`
+            - Previous size: ${{ steps.diff.outputs.old_size }} bytes
+            - New size: ${{ steps.diff.outputs.new_size }} bytes
+
+            All `EmbeddedDatabaseTests` pass with the new database.
+          delete-branch: true
