@@ -3,6 +3,21 @@ import XCTest
 @testable import SwiftIP2ASN
 
 final class EmbeddedDatabaseTests: XCTestCase {
+
+    /// Verifies that loadUltraCompact() throws .resourceNotFound (not fatalError)
+    /// when the resource bundle doesn't contain ip2asn.ultra.
+    /// Regression test for https://github.com/Network-Weather/Swift-IP2ASN/issues/1
+    func testLoadUltraCompactThrowsResourceNotFoundForMissingBundle() throws {
+        // Use the test target's bundle, which doesn't contain ip2asn.ultra
+        let emptyBundle = Bundle(for: type(of: self))
+        XCTAssertThrowsError(try EmbeddedDatabase.loadUltraCompact(from: emptyBundle)) { error in
+            guard case EmbeddedDatabase.Error.resourceNotFound = error else {
+                XCTFail("Expected .resourceNotFound, got \(error)")
+                return
+            }
+        }
+    }
+
     func testEmbeddedUltraLookups() throws {
         // Try to load the embedded Ultra DB; skip if not present
         let db: UltraCompactDatabase
