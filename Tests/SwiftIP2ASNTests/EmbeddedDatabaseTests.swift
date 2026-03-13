@@ -18,14 +18,36 @@ final class EmbeddedDatabaseTests: XCTestCase {
         }
     }
 
-    func testEmbeddedUltraLookups() throws {
-        // Try to load the embedded Ultra DB; skip if not present
-        let db: UltraCompactDatabase
-        do {
-            db = try EmbeddedDatabase.loadUltraCompact()
-        } catch {
-            throw XCTSkip("Embedded ip2asn.ultra not present; skipping embedded DB checks")
+    /// Packaging integrity check: verifies the resource bundle and database are
+    /// present, loadable, and contain a reasonable number of entries.
+    /// This test hard-fails (not XCTSkip) because a missing database means a
+    /// broken release that will crash or degrade at runtime.
+    func testEmbeddedDatabasePackagingIntegrity() throws {
+        // 1. safeModule must find the resource bundle
+        let bundle = Bundle.safeModule
+        XCTAssertNotNil(bundle, "Bundle.safeModule should locate SwiftIP2ASN_SwiftIP2ASN.bundle")
+
+        // 2. The .ultra resource must exist inside it
+        let url = bundle?.url(forResource: "ip2asn", withExtension: "ultra")
+        XCTAssertNotNil(url, "ip2asn.ultra must be present in the resource bundle")
+
+        // 3. File should be non-trivial (current DB is ~3.4 MB)
+        if let path = url?.path {
+            let attrs = try FileManager.default.attributesOfItem(atPath: path)
+            let size = attrs[.size] as? UInt64 ?? 0
+            XCTAssertGreaterThan(size, 1_000_000, "ip2asn.ultra should be >1 MB (got \(size) bytes)")
         }
+
+        // 4. Database must load and contain substantial data
+        let db = try EmbeddedDatabase.loadUltraCompact()
+        XCTAssertGreaterThan(db.entryCount, 100_000,
+            "Embedded DB should have >100k entries (got \(db.entryCount))")
+        XCTAssertGreaterThan(db.uniqueASNCount, 10_000,
+            "Embedded DB should have >10k unique ASNs (got \(db.uniqueASNCount))")
+    }
+
+    func testEmbeddedUltraLookups() throws {
+        let db = try EmbeddedDatabase.loadUltraCompact()
 
         // Canonical IPs that should be present in a current full DB
         let cases: [(String, UInt32)] = [
