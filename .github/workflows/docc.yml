@@ -25,7 +25,7 @@ jobs:
       DOCS_DOMAIN: ip2asn.networkweather.com
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Select Xcode 16.4 (Swift 6.1)
         uses: maxim-lobanov/setup-xcode@v1
