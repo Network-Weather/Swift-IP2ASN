@@ -2,6 +2,79 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-05-28
+
+### Added
+- **IPv6 lookups.** `UltraCompactDatabase.lookup` transparently routes IPv4
+  strings to a `UInt32` binary search and IPv6 strings to a 128-bit
+  `(hi, lo)` UInt64 binary search.
+- **Dual-stack embedded DB.** Bundled `ip2asn.ultra` now built from both
+  `ip2asn-v4.tsv` (~446K ranges) and `ip2asn-v6.tsv` (~119K ranges) for a
+  combined ~565K ranges across ~86K unique ASNs (~4 MB compressed).
+- **New on-disk format `ULT2` (version 2)** with a 1-byte version + 1-byte
+  flags field after the magic for future additive evolution. Readers reject
+  unknown versions and ignore unknown flag bits.
+- CLI: `ip2asn-tools build-ultra <v4.tsv> [v6.tsv] <out.ultra>` — pass
+  either or both inputs.
+- Auto-update workflow fetches both TSVs weekly.
+
+### Changed
+- `IP2ASN.remote()` / `RemoteDatabase.defaultURL` now points at
+  `https://pkgs.networkweather.com/db/ip2asn-v2.ultra`. The pre-0.4.0
+  IPv4-only file remains at `/db/ip2asn.ultra` for older clients.
+- README, DocC, and CLAUDE.md updated to reflect dual-stack reality.
+
+### Removed (breaking)
+The following public types had no production callers — they were a parallel
+BGP-fetching architecture documented in the old README. Pre-1.0 license to
+break:
+- `ASNDatabase`, `CompressedTrie`, `SortedRangeDatabase`, the legacy
+  `SwiftIP2ASN` struct
+- `BGPDataFetcher`, `BGPDataParser`, `SimpleBGPFetcher`
+- `RIRDataFetcher` / `RIR` / `RIRDataParser`, `BinaryDatabaseFormat`
+- `IPAllocation`
+
+Migrate reads to `IP2ASN.embedded()` / `IP2ASN.remote()` returning
+`UltraCompactDatabase`; migrate builds to
+`UltraCompactBuilder.createUltraCompact(ipv4TSV:ipv6TSV:to:)`.
+
+### Test suite
+- Pruned ~30 redundant/inert test files; final count 42 with much faster
+  runtime (~5s parallel).
+- Added IPv6 lookup coverage (`testEmbeddedUltraIPv6Lookups`).
+- Network-dependent tests now skip cleanly when the default CDN URL is
+  unreachable.
+
+## [0.3.1] - 2026-05-27
+
+### Changed
+- Refreshed embedded `ip2asn.ultra` to 2026-05-27 iptoasn.com snapshot
+  (~3.5 MB; ~525K IPv4 ranges).
+- Auto-update workflow now runs the full `swift test` suite (not just
+  `EmbeddedDatabaseTests`) against a freshly built database before opening
+  its PR. Workflow-opened PRs aren't triggered by `ci.yml` due to GitHub's
+  `GITHUB_TOKEN` anti-recursion safety, so the in-workflow test step is
+  the only gate.
+- Bumped GitHub Actions to Node 24-compatible versions
+  (`actions/checkout@v6`, `peter-evans/create-pull-request@v8`,
+  `actions/upload-pages-artifact@v3`, `actions/deploy-pages@v4`).
+
+## [0.3.0] - 2026-03-13
+
+### Added
+- **Weekly auto-update workflow** (`.github/workflows/update-database.yml`)
+  that fetches the latest iptoasn.com TSV every Monday and opens a PR
+  refreshing `Sources/SwiftIP2ASN/Resources/ip2asn.ultra`.
+
+### Changed
+- Refreshed embedded database to March 2026 BGP data.
+
+### Fixed
+- `Bundle.module` no longer crashes via `fatalError` when the resource is
+  missing in unusual bundle layouts; `EmbeddedDatabase.loadUltraCompact`
+  now throws `Error.resourceNotFound` instead, surfaced through a safe
+  `BundleAccessor` fallback.
+
 ## [0.2.1] - 2025-11-24
 
 ### Added
