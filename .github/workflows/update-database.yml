@@ -41,7 +41,7 @@ jobs:
 
       - name: Run tests
         if: steps.diff.outputs.changed == 'true'
-        run: swift test --filter EmbeddedDatabaseTests
+        run: swift test
 
       - name: Create Pull Request
         if: steps.diff.outputs.changed == 'true'
