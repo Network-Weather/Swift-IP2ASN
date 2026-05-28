@@ -14,16 +14,13 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Skip tests for now - they're hanging
-# TODO: Fix hanging tests
-# echo "Running tests..."
-# swift test
-# if [ $? -ne 0 ]; then
-#     echo "❌ Tests failed. Please fix them before committing."
-#     exit 1
-# fi
+echo "Running tests..."
+swift test --parallel
+if [ $? -ne 0 ]; then
+    echo "❌ Tests failed. Please fix them before committing."
+    exit 1
+fi
 
-# Build the project
 echo "Building project..."
 swift build
 if [ $? -ne 0 ]; then
