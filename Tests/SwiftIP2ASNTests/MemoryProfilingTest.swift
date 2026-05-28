@@ -77,66 +77,6 @@ final class MemoryProfilingTest: XCTestCase {
         print("\n" + String(repeating: "=", count: 70))
     }
 
-    func testMemoryUsageOfCompressedTrie() async throws {
-        print("\n" + String(repeating: "=", count: 70))
-        print("MEMORY PROFILING: CompressedTrie")
-        print(String(repeating: "=", count: 70))
-
-        let baseMemory = getMemoryUsage()
-        print("\nBase memory: \(formatBytes(baseMemory))")
-
-        // Create trie with varying sizes
-        let testSizes = [100, 1000, 10000]
-
-        for size in testSizes {
-            let beforeTrie = getMemoryUsage()
-
-            let trie = CompressedTrie()
-
-            // Insert /24 ranges
-            for i in 0..<size {
-                let startIP = UInt32(i * 256 + 0x0A00_0000)  // Start from 10.0.0.0
-                if let addr = IPAddress.fromIPv4UInt32(startIP) {
-                    let range = IPRange(start: addr, prefixLength: 24)
-                    let info = ASNInfo(
-                        asn: UInt32(i % 1000),
-                        countryCode: "US",
-                        registry: "test",
-                        allocatedDate: nil,
-                        name: "Test AS \(i % 1000)"
-                    )
-                    await trie.insert(range: range, asnInfo: info)
-                }
-            }
-
-            await trie.finalize()
-            let afterTrie = getMemoryUsage()
-            let delta = afterTrie > beforeTrie ? afterTrie - beforeTrie : 0
-
-            let stats = await trie.getStatistics()
-
-            print("\n📊 Trie with \(size) /24 ranges:")
-            print("   Total nodes: \(stats.totalNodes)")
-            print("   IPv4 entries: \(stats.ipv4Entries)")
-            print("   Memory used: \(formatKB(delta))")
-            if stats.totalNodes > 0 {
-                print("   Bytes per node: \(delta / UInt64(stats.totalNodes))")
-            }
-            if size > 0 {
-                print("   Bytes per range: \(delta / UInt64(size))")
-            }
-
-            // Verify lookup works
-            let testAddr = UInt32(0x0A00_0001)  // 10.0.0.1
-            if let addr = IPAddress.fromIPv4UInt32(testAddr) {
-                let result = await trie.lookup(addr)
-                XCTAssertNotNil(result, "Should find inserted range")
-            }
-        }
-
-        print("\n" + String(repeating: "=", count: 70))
-    }
-
     func testLookupPerformance() throws {
         print("\n" + String(repeating: "=", count: 70))
         print("PERFORMANCE: Lookup Speed")

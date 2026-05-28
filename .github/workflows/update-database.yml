@@ -20,11 +20,13 @@ jobs:
       - name: Build CLI
         run: swift build -c release
 
-      - name: Download latest TSV
-        run: curl -sL https://iptoasn.com/data/ip2asn-v4.tsv.gz | gunzip > /tmp/ip2asn-v4.tsv
+      - name: Download latest TSVs (v4 + v6)
+        run: |
+          curl -sL https://iptoasn.com/data/ip2asn-v4.tsv.gz | gunzip > /tmp/ip2asn-v4.tsv
+          curl -sL https://iptoasn.com/data/ip2asn-v6.tsv.gz | gunzip > /tmp/ip2asn-v6.tsv
 
-      - name: Build ultra-compact database
-        run: .build/release/ip2asn-tools build-ultra /tmp/ip2asn-v4.tsv Sources/SwiftIP2ASN/Resources/ip2asn.ultra
+      - name: Build ultra-compact dual-stack database
+        run: .build/release/ip2asn-tools build-ultra /tmp/ip2asn-v4.tsv /tmp/ip2asn-v6.tsv Sources/SwiftIP2ASN/Resources/ip2asn.ultra
 
       - name: Check for changes
         id: diff
@@ -53,7 +55,7 @@ jobs:
           body: |
             Automated weekly database update from [iptoasn.com](https://iptoasn.com).
 
-            - Source: `ip2asn-v4.tsv.gz`
+            - Sources: `ip2asn-v4.tsv.gz` + `ip2asn-v6.tsv.gz`
             - Previous size: ${{ steps.diff.outputs.old_size }} bytes
             - New size: ${{ steps.diff.outputs.new_size }} bytes
 

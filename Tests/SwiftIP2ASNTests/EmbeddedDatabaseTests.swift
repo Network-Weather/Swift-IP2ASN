@@ -2,6 +2,41 @@ import XCTest
 
 @testable import SwiftIP2ASN
 
+/// Probes the default CDN URL once per process and caches the result so
+/// network-dependent tests are skipped (rather than failing) when the V2 file
+/// hasn't been deployed yet.
+enum SkipIfCDNUnavailable {
+    private actor State {
+        var result: Result<Void, Error>?
+        func decide() async -> Result<Void, Error> {
+            if let r = result { return r }
+            var req = URLRequest(url: RemoteDatabase.defaultURL)
+            req.httpMethod = "HEAD"
+            req.timeoutInterval = 10
+            do {
+                let (_, response) = try await URLSession.shared.data(for: req)
+                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    result = .success(())
+                } else {
+                    let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                    result = .failure(XCTSkip("CDN \(RemoteDatabase.defaultURL) returned HTTP \(code); skipping network-dependent test"))
+                }
+            } catch {
+                result = .failure(XCTSkip("CDN \(RemoteDatabase.defaultURL) unreachable: \(error.localizedDescription)"))
+            }
+            return result!
+        }
+    }
+    private static let shared = State()
+
+    static func ensure() async throws {
+        switch await shared.decide() {
+        case .success: return
+        case .failure(let error): throw error
+        }
+    }
+}
+
 final class EmbeddedDatabaseTests: XCTestCase {
 
     /// Verifies that loadUltraCompact() throws .resourceNotFound (not fatalError)
@@ -63,6 +98,27 @@ final class EmbeddedDatabaseTests: XCTestCase {
             XCTAssertEqual(result?.asn, expected, "\(ip) should be AS\(expected)")
         }
     }
+
+    func testEmbeddedUltraIPv6Lookups() throws {
+        let db = try EmbeddedDatabase.loadUltraCompact()
+
+        XCTAssertGreaterThan(db.ipv6EntryCount, 0, "Embedded DB should contain IPv6 ranges")
+
+        // Stable, well-known dual-stack endpoints
+        let cases: [(String, UInt32)] = [
+            ("2001:4860:4860::8888", 15169),  // Google Public DNS
+            ("2606:4700:4700::1111", 13335)   // Cloudflare 1.1.1.1
+        ]
+
+        for (ip, expected) in cases {
+            let result = db.lookup(ip)
+            XCTAssertNotNil(result, "Embedded DB should contain \(ip)")
+            XCTAssertEqual(result?.asn, expected, "\(ip) should be AS\(expected)")
+        }
+
+        // ::1 (loopback) is not advertised in BGP and should miss
+        XCTAssertNil(db.lookup("::1"), "Loopback should not resolve")
+    }
 }
 
 // MARK: - IP2ASN Simple API Tests
@@ -86,6 +142,7 @@ final class IP2ASNSimpleAPITests: XCTestCase {
     }
 
     func testIP2ASNRemote() async throws {
+        try await SkipIfCDNUnavailable.ensure()
         // Test the simple remote() API
         let db = try await IP2ASN.remote()
 
@@ -102,6 +159,7 @@ final class IP2ASNSimpleAPITests: XCTestCase {
     }
 
     func testIP2ASNRefresh() async throws {
+        try await SkipIfCDNUnavailable.ensure()
         // First load
         _ = try await IP2ASN.remote()
 
@@ -132,6 +190,10 @@ final class IP2ASNSimpleAPITests: XCTestCase {
 // MARK: - RemoteDatabaseTests
 
 final class RemoteDatabaseTests: XCTestCase {
+
+    override func setUp() async throws {
+        try await SkipIfCDNUnavailable.ensure()
+    }
 
     private func createTempDir() -> URL {
         FileManager.default.temporaryDirectory

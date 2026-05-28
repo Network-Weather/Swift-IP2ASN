@@ -195,3 +195,17 @@ public func uint32ToIPv4String(_ ip: UInt32) -> String {
     let b3 = ip & 0xFF
     return "\(b0).\(b1).\(b2).\(b3)"
 }
+
+/// Parse an IPv6 address string into a `(hi, lo)` UInt64 pair in network byte order.
+/// Returns nil for IPv4 or unparseable input.
+@inlinable
+public func parseIPv6ToPair(_ ip: String) -> (hi: UInt64, lo: UInt64)? {
+    guard let addr = IPv6Address(ip) else { return nil }
+    let bytes = addr.rawValue
+    guard bytes.count == 16 else { return nil }
+    var hi: UInt64 = 0
+    var lo: UInt64 = 0
+    for i in 0..<8 { hi = (hi << 8) | UInt64(bytes[i]) }
+    for i in 8..<16 { lo = (lo << 8) | UInt64(bytes[i]) }
+    return (hi, lo)
+}
