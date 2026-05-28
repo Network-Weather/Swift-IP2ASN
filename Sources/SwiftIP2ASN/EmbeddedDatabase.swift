@@ -93,7 +93,7 @@ public enum EmbeddedDatabase {
 /// ```swift
 /// let remote = RemoteDatabase()
 ///
-/// // First call downloads (~3.4 MB), subsequent calls use cache
+/// // First call downloads (~4 MB), subsequent calls use cache
 /// let db = try await remote.load()
 ///
 /// // Perform lookups
@@ -159,9 +159,10 @@ public actor RemoteDatabase {
 
     /// The default URL for fetching the IP2ASN database.
     ///
-    /// Points to `https://pkgs.networkweather.com/db/ip2asn.ultra`, which is
-    /// updated daily with fresh BGP routing data.
-    public static let defaultURL = URL(string: "https://pkgs.networkweather.com/db/ip2asn.ultra")!
+    /// Points to `https://pkgs.networkweather.com/db/ip2asn-v2.ultra`, the dual-stack
+    /// V2 format introduced in 0.4.0. The pre-0.4.0 IPv4-only file remains at
+    /// `/db/ip2asn.ultra` for compatibility with older library versions.
+    public static let defaultURL = URL(string: "https://pkgs.networkweather.com/db/ip2asn-v2.ultra")!
 
     private let cacheURL: URL
     private let metadataURL: URL
@@ -275,7 +276,7 @@ public actor RemoteDatabase {
     /// for updates. The typical flow is:
     /// 1. Send HEAD request (~200 bytes)
     /// 2. Compare ETag/Last-Modified with stored metadata
-    /// 3. Download only if changed (~3.4 MB)
+    /// 3. Download only if changed (~4 MB)
     ///
     /// If using a bundled database (no previous download metadata), this will
     /// always download since the bundled version cannot be compared.

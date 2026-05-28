@@ -5,11 +5,11 @@ A high-performance Swift 6 library for IP address to ASN (Autonomous System Numb
 ## Features
 
 - **High Performance**: ~1 million lookups per second using binary search on sorted arrays
-- **Dual Stack Support**: Full support for both IPv4 and IPv6 addresses
-- **Swift 6 Ready**: Built with actors and Sendable types for thread-safe concurrent access
+- **Dual Stack Support**: IPv4 and IPv6 lookups against a single embedded database
+- **Swift 6 Ready**: Built with `Sendable` value types for thread-safe concurrent access
 - **Automatic Updates**: `RemoteDatabase` fetches updates from CDN with ETag-based caching
 - **Offline-First**: Apps can bundle a database for immediate offline functionality
-- **Memory Efficient**: ~3.4 MB compressed database covers 500K+ IP ranges
+- **Memory Efficient**: ~4 MB compressed database covers 500K+ IPv4 + 170K+ IPv6 ranges
 
 ## Installation
 
@@ -19,7 +19,7 @@ Add the following to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.3.1")
+    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.4.0")
 ]
 ```
 
@@ -119,34 +119,43 @@ let googleDNS: UInt32 = 0x08_08_08_08  // 8.8.8.8
 if let result = db.lookup(ip: googleDNS) {
     print("Google: AS\(result.asn)")  // AS15169
 }
+
+// IPv6
+if let result = db.lookup("2001:4860:4860::8888") {
+    print("Google v6: AS\(result.asn)")  // AS15169
+}
 ```
 
 ### Building a Custom Database
 
-For advanced use cases, build a database from BGP data:
+To build a fresh ultra-compact dual-stack database from the
+[iptoasn.com](https://iptoasn.com) TSVs (e.g. for a private fork or
+non-default refresh cadence):
 
 ```swift
-import SwiftIP2ASN
 import IP2ASNDataPrep
+import SwiftIP2ASN
 
-// Fetch and parse BGP data
-let fetcher = BGPDataFetcher()
-let rawData = try await fetcher.fetchIPv4Data()
+// Combined v4 + v6 build → .ultra
+try UltraCompactBuilder.createUltraCompact(
+    ipv4TSV: "/path/to/ip2asn-v4.tsv",
+    ipv6TSV: "/path/to/ip2asn-v6.tsv",
+    to: "/path/to/out.ultra"
+)
 
-let parser = BGPDataParser()
-let mappings = parser.parseIPtoASNData(rawData)
-
-// Build database
-let database = ASNDatabase()
-await database.buildWithBGPData(bgpEntries: mappings.map {
-    (range: $0.range, asn: $0.asn, name: $0.name)
-})
-
-// Lookup
-if let result = await database.lookup("8.8.8.8") {
-    print("ASN: \(result.asn)")
-}
+// Load and look up either family
+let db = try UltraCompactDatabase(path: "/path/to/out.ultra")
+print(db.lookup("8.8.8.8")?.asn ?? 0)                // 15169
+print(db.lookup("2001:4860:4860::8888")?.asn ?? 0)   // 15169
 ```
+
+The same build is available via the CLI:
+
+```bash
+ip2asn-tools build-ultra <v4.tsv> [v6.tsv] <out.ultra>
+```
+
+Pass only the v4 TSV for an IPv4-only database.
 
 ### CLI Tools
 

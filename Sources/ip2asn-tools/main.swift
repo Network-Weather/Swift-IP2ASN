@@ -20,7 +20,7 @@ func usage() -> Never {
           lookup-compressed <db.cdb> <ip>
           bench-compressed <db.cdb> [iterations]
 
-          build-ultra <input.tsv> <output.ultra>
+          build-ultra <v4.tsv> [v6.tsv] <output.ultra>
           lookup-ultra <db.ultra> <ip>
           bench-ultra <db.ultra> [iterations]
         """
@@ -78,11 +78,26 @@ case .benchCompressed:
     report(times: timesC, label: "Compressed load")
 
 case .buildUltra:
-    guard args.count == 3 else { usage() }
-    let input = String(args.dropFirst().first!)
-    let output = String(args.dropFirst(2).first!)
+    // build-ultra <v4.tsv> <output.ultra>
+    // build-ultra <v4.tsv> <v6.tsv> <output.ultra>
+    let positional = Array(args.dropFirst())
+    let v4Path: String?
+    let v6Path: String?
+    let outputPath: String
+    switch positional.count {
+    case 2:
+        v4Path = positional[0]
+        v6Path = nil
+        outputPath = positional[1]
+    case 3:
+        v4Path = positional[0]
+        v6Path = positional[1]
+        outputPath = positional[2]
+    default:
+        usage()
+    }
     do {
-        try UltraCompactBuilder.createUltraCompact(from: input, to: output)
+        try UltraCompactBuilder.createUltraCompact(ipv4TSV: v4Path, ipv6TSV: v6Path, to: outputPath)
     } catch {
         fputs("Error: \(error)\n", stderr)
         exit(1)

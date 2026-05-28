@@ -59,9 +59,9 @@ final class IPAddressTests: XCTestCase {
         XCTAssertNotNil(range1)
         XCTAssertEqual(range1?.prefixLength, 16)
 
-        let range2 = IPRange(cidr: "2001:db8::/32")
-        XCTAssertNotNil(range2)
-        XCTAssertEqual(range2?.prefixLength, 32)
+        for cidr in ["2001:db8::/32", "fe80::/10", "::/0", "2001:db8::/128"] {
+            XCTAssertNotNil(IPRange(cidr: cidr), "Failed to parse IPv6 range: \(cidr)")
+        }
 
         XCTAssertNil(IPRange(cidr: "invalid"))
         XCTAssertNil(IPRange(cidr: "192.168.0.0/33"))

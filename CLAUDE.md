@@ -45,51 +45,42 @@ swift build -c release
 
 ## Architecture
 
-This is a Swift 6 library for IP-to-ASN lookups using compressed trie data structures. It provides microsecond-level lookups with no network access after database construction.
+This is a Swift 6 library for IP-to-ASN lookups via a precomputed ultra-compact on-disk format. It provides microsecond-level lookups with no network access after database construction.
 
 ### Module Structure
 
 **SwiftIP2ASN** (main library) - Runtime lookup functionality:
-- `SwiftIP2ASN.swift` - Main entry point struct
-- `ASNDatabase.swift` - Actor managing trie and lookups (thread-safe)
-- `CompressedTrie.swift` - High-performance trie with path compression
+- `SwiftIP2ASN.swift` - `IP2ASN` enum: top-level entry point for embedded/remote DB
 - `IPAddress.swift` - Type-safe IPv4/IPv6 representation
 - `ASNInfo.swift` - ASN lookup result type
-- `UltraCompactFormat.swift` - Ultra-compact on-disk format reader
-- `CompressedDatabaseFormat.swift` - Delta-encoded format reader
+- `UltraCompactFormat.swift` - Ultra-compact on-disk format reader (`UltraCompactDatabase`)
+- `CompressedDatabaseFormat.swift` - Delta-encoded format reader (used by CLI)
 - `EmbeddedDatabase.swift` - Access to bundled database resource
-- `SortedRangeDatabase.swift` - Alternative sorted-range lookup implementation
+- `RemoteDatabase.swift` - CDN-hosted database with ETag-based refresh
+- `BundleAccessor.swift` - Module-bundle resolution fallback
 
 **IP2ASNDataPrep** (build-time module) - Database construction:
-- `RIRDataFetcher.swift` - Fetches RIR delegation files
-- `BGPDataFetcher.swift` / `SimpleBGPFetcher.swift` - BGP route data fetching
-- `UltraCompactBuilder.swift` - Builds .ultra format databases
-- `CompressedDatabaseBuilder.swift` - Builds .cdb format databases
+- `UltraCompactBuilder.swift` - Builds `.ultra` format databases from iptoasn TSV
+- `CompressedDatabaseBuilder.swift` - Builds `.cdb` format databases from TSV
 
-**ip2asn-tools** (CLI) - Command-line interface using both modules.
+**ip2asn-tools** (CLI) - Command-line interface for build/lookup/benchmark.
 
 ### Database Formats
 
-- **Ultra-Compact (.ultra)**: Recommended default. Smallest size, modest decode cost at startup.
-- **Compressed (.cdb)**: Delta-encoded format for comparison.
-- **Embedded**: Ship prebuilt database at `Sources/SwiftIP2ASN/Resources/ip2asn.ultra`
+- **Ultra-Compact V2 (.ultra)**: Default and only production format. Magic `ULT2`; holds both IPv4 (delta-varint, 4-byte addrs) and IPv6 (absolute, 16-byte addrs) ranges plus a shared ASN name table. Built by `UltraCompactBuilder`, read by `UltraCompactDatabase`.
+- **Compressed (.cdb)**: Legacy format kept for CLI `build-compressed`/`lookup-compressed`/`bench-compressed` commands.
+- **Embedded**: Bundled at `Sources/SwiftIP2ASN/Resources/ip2asn.ultra`; refreshed weekly via `.github/workflows/update-database.yml` from both `ip2asn-v4.tsv.gz` and `ip2asn-v6.tsv.gz`.
+- **CDN URL**: `RemoteDatabase` fetches from `https://pkgs.networkweather.com/db/ip2asn-v2.ultra` (new in 0.4.0; pre-0.4.0 consumers continue to read `/db/ip2asn.ultra`).
 
-### Concurrency Model (Swift 6.2)
+### Concurrency Model
 
-- Uses Swift 6.2 with actors for thread-safe data structures
-- `ASNDatabase` and `CompressedTrie` are actors for thread-safe access
-- Database structs (`UltraCompactDatabase`, `CompactDatabase`, `OptimizedDatabase`, `BinaryDatabase`) are immutable `Sendable` structs safe for concurrent access
-- All network operations use async/await
-- Use `@concurrent` attribute to explicitly offload CPU-intensive work to background threads
-- Prefer `nonisolated` for types that need background processing
-- Async functions run on the caller's actor by default (no implicit offloading)
+- Swift 6.1 (`swift-tools-version: 6.1`); no Swift 6.2/6.3-only features in use.
+- `RemoteDatabase` is an actor; `UltraCompactDatabase` is an immutable `Sendable` struct.
+- All network operations use async/await.
 
 ## Key Patterns
 
-- **Trie nodes**: Use fixed-size `left`/`right` pointers instead of `Dictionary<Bool, Node>` (~3x memory savings)
-- **Binary search databases**: Use contiguous `[UInt32]` arrays for cache-efficient lookups
-- **Byte-by-byte parsing**: Avoid `withUnsafeBytes.load()` on unaligned offsets; use manual byte extraction
-- **IPv4 lookups**: O(log n) binary search on sorted ranges, or O(32) bit-level trie traversal
-- **IPv6 lookups**: O(128) bit-level trie traversal
-- **Prefix calculation**: Use `count.trailingZeroBitCount` instead of `log2(Double(count))` for performance
-- Most tests run offline; some integration tests fetch external data and are skipped by default
+- **Byte-by-byte parsing**: Avoid `withUnsafeBytes.load()` on unaligned offsets; use manual byte extraction.
+- **IPv4 lookups**: O(log n) binary search on parallel `[UInt32]` start/end arrays.
+- **IPv6 lookups**: O(log n) binary search on parallel `[UInt64]` (hi, lo) arrays; addresses compared lexicographically via `compare128`.
+- Most tests run offline; the auto-update workflow runs the full suite against a freshly built dual-stack DB before opening its PR.
