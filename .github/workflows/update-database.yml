@@ -57,5 +57,5 @@ jobs:
             - Previous size: ${{ steps.diff.outputs.old_size }} bytes
             - New size: ${{ steps.diff.outputs.new_size }} bytes
 
-            All `EmbeddedDatabaseTests` pass with the new database.
+            Full `swift test` suite passes with the new database.
           delete-branch: true
