@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-07-14
+
+### Added
+- Unit tests verifying new cache behaviors (self-healing, poisoning prevention, missing cache refresh).
+
+### Changed
+- **Self-Healing Disk Cache.** `RemoteDatabase.load` now intercepts corrupted/invalid format cache files, deletes them automatically, and recovers by falling back to the bundled database or network fetch.
+- **Cache Poisoning Prevention.** `RemoteDatabase.fetchAndCache` parses and validates database format before writing to disk cache, preventing CDN/network failures from corrupting cached data.
+- **Robust Cache Refresh.** `RemoteDatabase.refresh` checks file presence on disk (`isCached()`) rather than just stored metadata, ensuring missing database files are re-downloaded even if ETags match.
+- **Auto-update workflow** updated to run all format validation tests (`IP2ASN_RUN_FORMAT_TESTS=1`) in CI before opening PRs.
+- Refreshed embedded `ip2asn.ultra` database to July 2026 iptoasn.com snapshot (~4.18 MB).
+
 ## [0.4.0] - 2026-05-28
 
 ### Added

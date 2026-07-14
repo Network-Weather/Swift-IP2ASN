@@ -243,9 +243,15 @@ public actor RemoteDatabase {
 
         // Check disk cache (downloaded updates take priority over bundled)
         if FileManager.default.fileExists(atPath: cacheURL.path) {
-            let db = try UltraCompactDatabase(path: cacheURL.path)
-            cachedDatabase = db
-            return db
+            do {
+                let db = try UltraCompactDatabase(path: cacheURL.path)
+                cachedDatabase = db
+                return db
+            } catch {
+                // Remove corrupted or incompatible cached database and metadata
+                try? FileManager.default.removeItem(at: cacheURL)
+                try? FileManager.default.removeItem(at: metadataURL)
+            }
         }
 
         // Use bundled database if provided (works offline)
@@ -319,12 +325,12 @@ public actor RemoteDatabase {
         let remoteETag = httpResponse.value(forHTTPHeaderField: "ETag")
         let remoteLastModified = httpResponse.value(forHTTPHeaderField: "Last-Modified")
 
-        // Check if we already have this version (only if we have metadata from a previous download)
-        if let storedETag = storedMeta?.etag, let remoteETag = remoteETag {
+        // Check if we already have this version (only if we have metadata from a previous download and the cached file exists)
+        if isCached(), let storedETag = storedMeta?.etag, let remoteETag = remoteETag {
             if storedETag == remoteETag {
                 return .alreadyCurrent
             }
-        } else if let storedLastModified = storedMeta?.lastModified,
+        } else if isCached(), let storedLastModified = storedMeta?.lastModified,
             let remoteLastModified = remoteLastModified
         {
             if storedLastModified == remoteLastModified {
@@ -413,6 +419,9 @@ public actor RemoteDatabase {
             throw EmbeddedDatabase.Error.invalidResponse
         }
 
+        // Validate and parse the database first before writing to disk
+        let db = try UltraCompactDatabase(data: data)
+
         // Write to disk cache (atomic to prevent corruption)
         try data.write(to: cacheURL, options: .atomic)
 
@@ -421,8 +430,7 @@ public actor RemoteDatabase {
         let lastModified = httpResponse.value(forHTTPHeaderField: "Last-Modified")
         saveMetadata(etag: etag, lastModified: lastModified)
 
-        // Load and cache in memory
-        let db = try UltraCompactDatabase(data: data)
+        // Cache in memory
         cachedDatabase = db
         return db
     }

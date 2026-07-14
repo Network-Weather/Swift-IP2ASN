@@ -568,4 +568,92 @@ final class RemoteDatabaseTests: XCTestCase {
             }
         }
     }
+
+    func testRemoteDatabaseSelfHealingCache() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        // Create a corrupted cache file
+        let cacheURL = tempDir.appendingPathComponent("ip2asn.ultra")
+        let metadataURL = tempDir.appendingPathComponent("ip2asn.meta.json")
+
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        try "corrupted random data".data(using: .utf8)?.write(to: cacheURL)
+        try "{}".data(using: .utf8)?.write(to: metadataURL)
+
+        guard let bundledPath = Bundle.module.url(forResource: "ip2asn", withExtension: "ultra")?.path
+        else {
+            throw XCTSkip("No embedded database to test with")
+        }
+
+        let remote = RemoteDatabase(
+            cacheDirectory: tempDir,
+            bundledDatabasePath: bundledPath
+        )
+
+        // Load should catch the error, delete the corrupted cache, and fallback to bundled DB
+        let db = try await remote.load()
+        XCTAssertGreaterThan(db.entryCount, 100_000)
+
+        // Stale cache files should have been removed
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cacheURL.path), "Corrupted cache file should have been deleted")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: metadataURL.path), "Metadata file should have been deleted")
+    }
+
+    func testRemoteDatabasePoisoningPrevention() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        // Point to an invalid remote URL that serves garbage data
+        let invalidFileURL = tempDir.appendingPathComponent("invalid.txt")
+        try "invalid content".write(to: invalidFileURL, atomically: true, encoding: .utf8)
+
+        let remote = RemoteDatabase(
+            remoteURL: invalidFileURL,
+            cacheDirectory: tempDir
+        )
+
+        // Loading should fail due to invalid format of the downloaded URL
+        do {
+            _ = try await remote.load()
+            XCTFail("Should have failed to load invalid URL database")
+        } catch {
+            // Expected failure
+        }
+
+        // The disk cache should NOT have been written
+        let cachePath = tempDir.appendingPathComponent("ip2asn.ultra").path
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cachePath), "Cache should not be written for invalid database")
+    }
+
+    func testRemoteDatabaseRefreshForcesDownloadIfCacheMissing() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let remote = RemoteDatabase(cacheDirectory: tempDir)
+
+        // Load initially (fetches and caches)
+        _ = try await remote.load()
+        let isCachedBefore = await remote.isCached()
+        XCTAssertTrue(isCachedBefore)
+
+        // Manually delete the cache file but leave the metadata file
+        let cacheURL = tempDir.appendingPathComponent("ip2asn.ultra")
+        try FileManager.default.removeItem(at: cacheURL)
+        let isCachedAfterDelete = await remote.isCached()
+        XCTAssertFalse(isCachedAfterDelete)
+
+        // Refresh should see that cache is missing (even if meta matches) and download it again
+        let result = try await remote.refresh()
+        switch result {
+        case .alreadyCurrent:
+            XCTFail("Should have updated because the cached file is missing")
+        case .updated(let db):
+            XCTAssertGreaterThan(db.entryCount, 0)
+            let isCachedAfterRefresh = await remote.isCached()
+            XCTAssertTrue(isCachedAfterRefresh, "Cache file should be re-downloaded")
+        }
+    }
 }
