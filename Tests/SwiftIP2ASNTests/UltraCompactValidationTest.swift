@@ -28,9 +28,10 @@ final class UltraCompactValidationTest: XCTestCase {
             process.standardOutput = pipe
 
             try process.run()
-            process.waitUntilExit()
-
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            XCTAssertEqual(process.terminationStatus, 0, "gunzip should successfully decompress the IPv4 TSV")
+            guard process.terminationStatus == 0 else { return }
             try data.write(to: URL(fileURLWithPath: tsvPath))
         }
 
@@ -46,13 +47,18 @@ final class UltraCompactValidationTest: XCTestCase {
             guard fields.count >= 5,
                 let start = ipStringToUInt32(fields[0]),
                 let end = ipStringToUInt32(fields[1]),
-                let asn = UInt32(fields[2])
+                let asn = UInt32(fields[2].replacingOccurrences(of: "AS", with: "")),
+                asn != 0
             else { continue }
 
             originalLookup.append((start, end, asn, fields[4]))
         }
 
         print("   Loaded \(originalLookup.count) ranges from original data")
+        guard !originalLookup.isEmpty else {
+            XCTFail("The source subset should contain at least one routable range")
+            return
+        }
 
         // Create ultra-compact database
         print("\n🗜️ Creating ultra-compact database...")
@@ -69,49 +75,51 @@ final class UltraCompactValidationTest: XCTestCase {
         print("\n📂 Loading ultra-compact database...")
         let compactDB = try UltraCompactDatabase(path: compactPath)
 
-        // Test 1: Known IPs that must work
-        print("\n✅ Test 1: Known IP Lookups")
+        // Test 1: Representative IPs from across the source subset
+        print("\n✅ Test 1: Representative IP Lookups")
         print(String(repeating: "-", count: 40))
 
-        let knownTests = [
-            ("1.0.0.1", UInt32(13335), "CLOUDFLARE"),
-            ("8.8.8.8", UInt32(15169), "GOOGLE"),
-            ("140.82.121.3", UInt32(36459), "GITHUB"),
-            ("157.240.22.35", UInt32(32934), "FACEBOOK")
+        let representativeIndexes = [
+            0,
+            originalLookup.count / 3,
+            originalLookup.count * 2 / 3,
+            originalLookup.count - 1
         ]
 
-        var knownPassed = 0
-        for (ip, expectedASN, org) in knownTests {
-            // Find in original data
-            let original = findInOriginal(ip: ip, data: originalLookup)
+        var representativePassed = 0
+        for index in representativeIndexes {
+            let range = originalLookup[index]
+            let ipNumber = range.start + (range.end - range.start) / 2
+            let ip = uint32ToIP(ipNumber)
             let compact = compactDB.lookup(ip)
 
             if let compact = compact {
-                let match = compact.asn == expectedASN || compact.asn == original?.asn
+                let match = compact.asn == range.asn
                 let status = match ? "✅" : "❌"
-                print("\(status) \(ip) → AS\(compact.asn) (expected AS\(expectedASN) - \(org))")
-                if match { knownPassed += 1 }
+                print("\(status) \(ip) → AS\(compact.asn) (expected AS\(range.asn) - \(range.name))")
+                XCTAssertEqual(compact.asn, range.asn, "\(ip) should match the source ASN")
+                if match { representativePassed += 1 }
             } else {
-                print("❌ \(ip) → NOT FOUND (expected AS\(expectedASN))")
+                print("❌ \(ip) → NOT FOUND (expected AS\(range.asn))")
+                XCTFail("\(ip) should be present in the compact database")
             }
         }
 
-        // Test 2: Random sampling validation
-        print("\n✅ Test 2: Random Sample Validation")
+        // Test 2: Deterministic sampling validation
+        print("\n✅ Test 2: Deterministic Sample Validation")
         print(String(repeating: "-", count: 40))
 
         var matches = 0
         var mismatches = 0
         var notFound = 0
-        let sampleSize = 1000
+        let sampleSize = min(1000, originalLookup.count)
 
         for index in 0..<sampleSize {
-            // Pick a random range
-            let randomRange = originalLookup[Int.random(in: 0..<originalLookup.count)]
+            // Sample evenly across the source subset.
+            let sampledRange = originalLookup[index * originalLookup.count / sampleSize]
 
-            // Pick a random IP within that range
-            let randomOffset = UInt32.random(in: 0...(randomRange.end - randomRange.start))
-            let testIP = randomRange.start + randomOffset
+            // Use the midpoint so repeated runs exercise the same addresses.
+            let testIP = sampledRange.start + (sampledRange.end - sampledRange.start) / 2
             let testIPString = uint32ToIP(testIP)
 
             // Look up in both
@@ -172,21 +180,22 @@ final class UltraCompactValidationTest: XCTestCase {
             if range.start > 0 {
                 let beforeIP = uint32ToIP(range.start - 1)
                 let beforeResult = compactDB.lookup(beforeIP)
-                // May or may not be found (could be in previous range)
-                if let beforeResult = beforeResult {
-                    XCTAssertNotEqual(beforeResult.asn, range.asn, "IP before range should have different ASN")
-                }
+                let expectedBefore = findInOriginal(ip: beforeIP, data: originalLookup)
+                XCTAssertEqual(
+                    beforeResult?.asn,
+                    expectedBefore?.asn,
+                    "IP immediately before the range should match the source data")
             }
 
             // Test just after range (if not last)
             if range.end < UInt32.max {
                 let afterIP = uint32ToIP(range.end + 1)
                 let afterResult = compactDB.lookup(afterIP)
-                // May or may not be found (could be in next range)
-                if let afterResult = afterResult {
-                    // Could be same ASN if ranges are from same org
-                    _ = afterResult  // Just checking it doesn't crash
-                }
+                let expectedAfter = findInOriginal(ip: afterIP, data: originalLookup)
+                XCTAssertEqual(
+                    afterResult?.asn,
+                    expectedAfter?.asn,
+                    "IP immediately after the range should match the source data")
             }
         }
 
@@ -196,8 +205,13 @@ final class UltraCompactValidationTest: XCTestCase {
         print("\n⚡ Test 4: Performance")
         print(String(repeating: "-", count: 40))
 
-        let perfTestIPs = (0..<10000).map { _ in
-            uint32ToIP(UInt32.random(in: 0x0100_0000...0xDF00_0000))  // Class A-C range
+        let perfSampleCount = 10_000
+        let perfLower = UInt32(0x0100_0000)
+        let perfUpper = UInt32(0xDF00_0000)
+        let perfSpan = UInt64(perfUpper - perfLower)
+        let perfTestIPs = (0..<perfSampleCount).map { index in
+            let offset = UInt32(UInt64(index) * perfSpan / UInt64(perfSampleCount - 1))
+            return uint32ToIP(perfLower + offset)
         }
 
         let startTime = Date()
@@ -234,13 +248,13 @@ final class UltraCompactValidationTest: XCTestCase {
         // Final summary
         print("\n" + String(repeating: "=", count: 70))
         print("🏆 VALIDATION COMPLETE")
-        print("  ✅ Known IPs: \(knownPassed)/\(knownTests.count) passed")
-        print("  ✅ Random sampling: \(String(format: "%.1f%%", accuracy)) accurate")
+        print("  ✅ Representative IPs: \(representativePassed)/\(representativeIndexes.count) passed")
+        print("  ✅ Deterministic sampling: \(String(format: "%.1f%%", accuracy)) accurate")
         print("  ✅ Boundary tests: Passed")
         print("  ✅ Performance: \(String(format: "%.1f", avgTime))μs average")
         print("  ✅ Compression: \(String(format: "%.1fx", ratio)) smaller")
 
-        if mismatches == 0 && notFound == 0 && knownPassed == knownTests.count {
+        if mismatches == 0 && notFound == 0 && representativePassed == representativeIndexes.count {
             print("\n✅ Ultra-compact format is VALID and working correctly!")
         } else {
             print("\n⚠️ Some issues detected - review above")

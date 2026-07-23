@@ -53,6 +53,7 @@ jobs:
         with:
           commit-message: "Update embedded IP2ASN database"
           branch: chore/auto-update-database
+          base: main
           title: "Update embedded IP2ASN database"
           body: |
             Automated weekly database update from [iptoasn.com](https://iptoasn.com).
