@@ -86,13 +86,13 @@ adding new public behavior.
 
 ### Deterministic remote-update tests
 
-- [ ] Introduce an injectable HTTP transport or session so cache and refresh
+- [x] Introduce an injectable HTTP transport or session so cache and refresh
       tests do not depend on the production CDN.
-- [ ] Test `200`, `304`, missing validators, unsupported `HEAD`, timeouts,
+- [x] Test `200`, `304`, missing validators, unsupported `HEAD`, timeouts,
       truncated responses, invalid database payloads, and server errors locally.
-- [ ] Keep a small, separately identified live-CDN smoke test; it may skip when
+- [x] Keep a small, separately identified live-CDN smoke test; it may skip when
       the network is unavailable without hiding failures in offline behavior.
-- [ ] Verify concurrent `load()` and `refresh()` calls do not perform redundant
+- [x] Verify concurrent `load()` and `refresh()` calls do not perform redundant
       downloads or expose partially updated state.
 
 ### Parser and cache hardening

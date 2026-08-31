@@ -1,5 +1,15 @@
 import Foundation
 
+protocol RemoteDatabaseHTTPTransport: Sendable {
+    func data(for request: URLRequest) async throws -> (Data, URLResponse)
+}
+
+private struct URLSessionRemoteDatabaseHTTPTransport: RemoteDatabaseHTTPTransport {
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try await URLSession.shared.data(for: request)
+    }
+}
+
 // MARK: - EmbeddedDatabase
 
 /// Provides access to the IP2ASN database bundled with the SwiftIP2ASN package.
@@ -168,7 +178,9 @@ public actor RemoteDatabase {
     private let metadataURL: URL
     private let remoteURL: URL
     private let bundledDatabasePath: String?
+    private let httpTransport: any RemoteDatabaseHTTPTransport
     private var cachedDatabase: UltraCompactDatabase?
+    private var fetchTask: Task<UltraCompactDatabase, Swift.Error>?
 
     /// Creates a new RemoteDatabase instance.
     ///
@@ -202,6 +214,30 @@ public actor RemoteDatabase {
     ) {
         self.remoteURL = remoteURL
         self.bundledDatabasePath = bundledDatabasePath
+        self.httpTransport = URLSessionRemoteDatabaseHTTPTransport()
+
+        let cacheDir =
+            cacheDirectory
+            ?? FileManager.default.urls(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask
+            ).first!.appendingPathComponent("SwiftIP2ASN", isDirectory: true)
+
+        self.cacheURL = cacheDir.appendingPathComponent("ip2asn.ultra")
+        self.metadataURL = cacheDir.appendingPathComponent("ip2asn.meta.json")
+    }
+
+    /// Internal initializer used to exercise remote behavior without contacting
+    /// the production CDN. The public initializer always uses `URLSession`.
+    init(
+        remoteURL: URL,
+        cacheDirectory: URL?,
+        bundledDatabasePath: String?,
+        httpTransport: any RemoteDatabaseHTTPTransport
+    ) {
+        self.remoteURL = remoteURL
+        self.bundledDatabasePath = bundledDatabasePath
+        self.httpTransport = httpTransport
 
         let cacheDir =
             cacheDirectory
@@ -264,7 +300,7 @@ public actor RemoteDatabase {
         }
 
         // Fetch from remote (only happens if no bundled DB and no cache)
-        return try await fetchAndCache()
+        return try await fetchAndCacheOnce()
     }
 
     /// The result of a ``refresh()`` operation.
@@ -313,7 +349,7 @@ public actor RemoteDatabase {
         var request = URLRequest(url: remoteURL)
         request.httpMethod = "HEAD"
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await performRequest(request, operation: "HEAD request")
 
         guard let httpResponse = response as? HTTPURLResponse,
             (200...299).contains(httpResponse.statusCode)
@@ -339,7 +375,7 @@ public actor RemoteDatabase {
         }
 
         // No metadata (using bundled DB) or remote is newer - download it
-        let db = try await fetchAndCache()
+        let db = try await fetchAndCacheOnce()
         return .updated(db)
     }
 
@@ -400,13 +436,48 @@ public actor RemoteDatabase {
         }
     }
 
+    private func performRequest(
+        _ request: URLRequest,
+        operation: String
+    ) async throws -> (Data, URLResponse) {
+        do {
+            return try await httpTransport.data(for: request)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw EmbeddedDatabase.Error.downloadFailed(
+                "\(operation) failed: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    private func fetchAndCacheOnce() async throws -> UltraCompactDatabase {
+        if let fetchTask {
+            return try await fetchTask.value
+        }
+
+        let task = Task { try await fetchAndCache() }
+        fetchTask = task
+
+        do {
+            let database = try await task.value
+            fetchTask = nil
+            return database
+        } catch {
+            fetchTask = nil
+            throw error
+        }
+    }
+
     private func fetchAndCache() async throws -> UltraCompactDatabase {
         // Ensure cache directory exists
         let cacheDir = cacheURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
         // Download
-        let (data, response) = try await URLSession.shared.data(from: remoteURL)
+        var request = URLRequest(url: remoteURL)
+        request.httpMethod = "GET"
+        let (data, response) = try await performRequest(request, operation: "Download")
 
         guard let httpResponse = response as? HTTPURLResponse,
             (200...299).contains(httpResponse.statusCode)

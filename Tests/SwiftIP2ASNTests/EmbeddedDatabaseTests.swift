@@ -2,9 +2,8 @@ import XCTest
 
 @testable import SwiftIP2ASN
 
-/// Probes the default CDN URL once per process and caches the result so
-/// network-dependent tests are skipped (rather than failing) when the V2 file
-/// hasn't been deployed yet.
+/// Requires an explicit opt-in, then probes the default CDN URL once per process
+/// so live smoke tests skip cleanly when the network is unavailable.
 enum SkipIfCDNUnavailable {
     private actor State {
         var result: Result<Void, Error>?
@@ -30,6 +29,9 @@ enum SkipIfCDNUnavailable {
     private static let shared = State()
 
     static func ensure() async throws {
+        guard ProcessInfo.processInfo.environment["IP2ASN_RUN_NETWORK"] == "1" else {
+            throw XCTSkip("Live CDN smoke tests disabled; set IP2ASN_RUN_NETWORK=1 to enable")
+        }
         switch await shared.decide() {
         case .success: return
         case .failure(let error): throw error
@@ -169,38 +171,6 @@ final class IP2ASNSimpleAPITests: XCTestCase {
         XCTAssertEqual(cloudflare?.asn, 13335)
     }
 
-    func testIP2ASNRemote() async throws {
-        try await SkipIfCDNUnavailable.ensure()
-        // Test the simple remote() API
-        let db = try await IP2ASN.remote()
-
-        XCTAssertGreaterThan(db.entryCount, 100_000, "Should have substantial entries")
-
-        // Test lookup
-        let google = db.lookup("8.8.8.8")
-        XCTAssertNotNil(google)
-        XCTAssertEqual(google?.asn, 15169)
-
-        // Test that cache exists after load
-        let cached = await IP2ASN.isCached()
-        XCTAssertTrue(cached, "Should be cached after remote load")
-    }
-
-    func testIP2ASNRefresh() async throws {
-        try await SkipIfCDNUnavailable.ensure()
-        // First load
-        _ = try await IP2ASN.remote()
-
-        // Refresh should report already current (no changes)
-        let result = try await IP2ASN.refresh()
-        switch result {
-        case .alreadyCurrent:
-            break  // Expected
-        case .updated:
-            break  // Also acceptable if CDN updated
-        }
-    }
-
     func testUltraCompactDatabaseIsSendable() async throws {
         // Verify UltraCompactDatabase can be passed across actor boundaries
         let db = try IP2ASN.embedded()
@@ -215,13 +185,99 @@ final class IP2ASNSimpleAPITests: XCTestCase {
     }
 }
 
-// MARK: - RemoteDatabaseTests
-
-final class RemoteDatabaseTests: XCTestCase {
-
+final class RemoteDatabaseLiveCDNSmokeTests: XCTestCase {
     override func setUp() async throws {
         try await SkipIfCDNUnavailable.ensure()
     }
+
+    func testIP2ASNRemote() async throws {
+        let db = try await IP2ASN.remote()
+
+        XCTAssertGreaterThan(db.entryCount, 100_000, "Should have substantial entries")
+        XCTAssertEqual(db.lookup("8.8.8.8")?.asn, 15169)
+        let cached = await IP2ASN.isCached()
+        XCTAssertTrue(cached, "Should be cached after remote load")
+    }
+
+    func testIP2ASNRefresh() async throws {
+        _ = try await IP2ASN.remote()
+
+        let result = try await IP2ASN.refresh()
+        switch result {
+        case .alreadyCurrent, .updated:
+            break
+        }
+    }
+}
+
+// MARK: - RemoteDatabaseTests
+
+private actor StubRemoteDatabaseHTTPTransport: RemoteDatabaseHTTPTransport {
+    struct Configuration: Sendable {
+        let databaseData: Data
+        let getStatusCode: Int
+        let headStatusCode: Int
+        let headers: [String: String]
+        let error: URLError?
+        let delayNanoseconds: UInt64
+
+        init(
+            databaseData: Data,
+            getStatusCode: Int = 200,
+            headStatusCode: Int = 200,
+            headers: [String: String] = [
+                "ETag": "\"fixture-v1\"",
+                "Last-Modified": "Sun, 30 Aug 2026 00:00:00 GMT"
+            ],
+            error: URLError? = nil,
+            delayNanoseconds: UInt64 = 0
+        ) {
+            self.databaseData = databaseData
+            self.getStatusCode = getStatusCode
+            self.headStatusCode = headStatusCode
+            self.headers = headers
+            self.error = error
+            self.delayNanoseconds = delayNanoseconds
+        }
+    }
+
+    private let configuration: Configuration
+    private var requests: [URLRequest] = []
+
+    init(configuration: Configuration) {
+        self.configuration = configuration
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        requests.append(request)
+
+        if configuration.delayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: configuration.delayNanoseconds)
+        }
+
+        if let error = configuration.error {
+            throw error
+        }
+
+        let isHead = request.httpMethod == "HEAD"
+        let statusCode = isHead ? configuration.headStatusCode : configuration.getStatusCode
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: configuration.headers
+        )!
+        return (isHead ? Data() : configuration.databaseData, response)
+    }
+
+    func requestedMethods() -> [String] {
+        requests.map { $0.httpMethod ?? "GET" }
+    }
+}
+
+final class RemoteDatabaseTests: XCTestCase {
+
+    private let fixtureRemoteURL = URL(string: "https://fixture.invalid/ip2asn.ultra")!
 
     private func createTempDir() -> URL {
         FileManager.default.temporaryDirectory
@@ -232,13 +288,53 @@ final class RemoteDatabaseTests: XCTestCase {
         try? FileManager.default.removeItem(at: url)
     }
 
+    private func embeddedDatabaseData() throws -> Data {
+        guard let url = Bundle.module.url(forResource: "ip2asn", withExtension: "ultra") else {
+            throw XCTSkip("No embedded database fixture")
+        }
+        return try Data(contentsOf: url)
+    }
+
+    private func makeRemote(
+        cacheDirectory: URL,
+        bundledDatabasePath: String? = nil
+    ) throws -> RemoteDatabase {
+        try makeRemoteAndTransport(
+            cacheDirectory: cacheDirectory,
+            bundledDatabasePath: bundledDatabasePath
+        ).remote
+    }
+
+    private func makeRemoteAndTransport(
+        cacheDirectory: URL,
+        bundledDatabasePath: String? = nil,
+        configuration: StubRemoteDatabaseHTTPTransport.Configuration? = nil
+    ) throws -> (remote: RemoteDatabase, transport: StubRemoteDatabaseHTTPTransport) {
+        let resolvedConfiguration: StubRemoteDatabaseHTTPTransport.Configuration
+        if let configuration {
+            resolvedConfiguration = configuration
+        } else {
+            resolvedConfiguration = StubRemoteDatabaseHTTPTransport.Configuration(
+                databaseData: try embeddedDatabaseData()
+            )
+        }
+        let transport = StubRemoteDatabaseHTTPTransport(configuration: resolvedConfiguration)
+        let remote = RemoteDatabase(
+            remoteURL: fixtureRemoteURL,
+            cacheDirectory: cacheDirectory,
+            bundledDatabasePath: bundledDatabasePath,
+            httpTransport: transport
+        )
+        return (remote, transport)
+    }
+
     // MARK: - Basic Caching Tests
 
     func testRemoteDatabaseInitialState() async throws {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let remote = try makeRemote(cacheDirectory: tempDir)
 
         // Should not be cached initially
         let isCached = await remote.isCached()
@@ -253,7 +349,7 @@ final class RemoteDatabaseTests: XCTestCase {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let remote = try makeRemote(cacheDirectory: tempDir)
 
         // First load fetches from network
         let db = try await remote.load()
@@ -274,7 +370,7 @@ final class RemoteDatabaseTests: XCTestCase {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let remote = try makeRemote(cacheDirectory: tempDir)
 
         // First load
         let db1 = try await remote.load()
@@ -285,7 +381,7 @@ final class RemoteDatabaseTests: XCTestCase {
         XCTAssertEqual(db2.entryCount, count1, "Cached DB should match")
 
         // Create new instance pointing to same cache
-        let remote2 = RemoteDatabase(cacheDirectory: tempDir)
+        let remote2 = try makeRemote(cacheDirectory: tempDir)
         let db3 = try await remote2.load()
         XCTAssertEqual(db3.entryCount, count1, "New instance should use disk cache")
     }
@@ -294,7 +390,7 @@ final class RemoteDatabaseTests: XCTestCase {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let remote = try makeRemote(cacheDirectory: tempDir)
 
         // Load to create cache
         _ = try await remote.load()
@@ -315,7 +411,7 @@ final class RemoteDatabaseTests: XCTestCase {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let (remote, transport) = try makeRemoteAndTransport(cacheDirectory: tempDir)
 
         // Load to create cache with metadata
         _ = try await remote.load()
@@ -328,13 +424,15 @@ final class RemoteDatabaseTests: XCTestCase {
         case .updated:
             XCTFail("Should not download again - database hasn't changed")
         }
+        let requestedMethods = await transport.requestedMethods()
+        XCTAssertEqual(requestedMethods, ["GET", "HEAD"])
     }
 
     func testRemoteDatabaseRefreshAfterClearDownloadsAgain() async throws {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let remote = try makeRemote(cacheDirectory: tempDir)
 
         // Load, then clear
         _ = try await remote.load()
@@ -350,6 +448,136 @@ final class RemoteDatabaseTests: XCTestCase {
         }
     }
 
+    func testRemoteDatabaseRefreshWithoutValidatorsDownloadsAgain() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: try embeddedDatabaseData(),
+            headers: [:]
+        )
+        let (remote, transport) = try makeRemoteAndTransport(
+            cacheDirectory: tempDir,
+            configuration: configuration
+        )
+
+        _ = try await remote.load()
+        let result = try await remote.refresh()
+        guard case .updated = result else {
+            XCTFail("A server without validators should trigger a new download")
+            return
+        }
+        let requestedMethods = await transport.requestedMethods()
+        XCTAssertEqual(requestedMethods, ["GET", "HEAD", "GET"])
+    }
+
+    func testRemoteDatabaseRefreshRejectsUnsupportedHead() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: try embeddedDatabaseData(),
+            headStatusCode: 405
+        )
+        let (remote, transport) = try makeRemoteAndTransport(
+            cacheDirectory: tempDir,
+            configuration: configuration
+        )
+
+        _ = try await remote.load()
+        do {
+            _ = try await remote.refresh()
+            XCTFail("An unsupported HEAD response should fail refresh")
+        } catch EmbeddedDatabase.Error.downloadFailed(let message) {
+            XCTAssertTrue(message.contains("HTTP 405"))
+        }
+        let requestedMethods = await transport.requestedMethods()
+        XCTAssertEqual(requestedMethods, ["GET", "HEAD"])
+    }
+
+    func testRemoteDatabaseRefreshRejectsUnsolicitedNotModified() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: try embeddedDatabaseData(),
+            headStatusCode: 304
+        )
+        let (remote, transport) = try makeRemoteAndTransport(
+            cacheDirectory: tempDir,
+            configuration: configuration
+        )
+
+        _ = try await remote.load()
+        do {
+            _ = try await remote.refresh()
+            XCTFail("A non-conditional HEAD request should not receive HTTP 304")
+        } catch EmbeddedDatabase.Error.downloadFailed(let message) {
+            XCTAssertTrue(message.contains("HTTP 304"))
+        }
+        let requestedMethods = await transport.requestedMethods()
+        XCTAssertEqual(requestedMethods, ["GET", "HEAD"])
+    }
+
+    func testRemoteDatabaseMapsTransportErrorsToDownloadFailure() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: Data(),
+            error: URLError(.timedOut)
+        )
+        let (remote, _) = try makeRemoteAndTransport(
+            cacheDirectory: tempDir,
+            configuration: configuration
+        )
+
+        do {
+            _ = try await remote.load()
+            XCTFail("A transport timeout should fail loading")
+        } catch EmbeddedDatabase.Error.downloadFailed(let message) {
+            XCTAssertTrue(message.contains("Download failed"))
+        }
+    }
+
+    func testRemoteDatabaseRejectsServerErrorAndEmptyResponse() async throws {
+        let serverErrorDir = createTempDir()
+        let emptyResponseDir = createTempDir()
+        defer {
+            cleanup(serverErrorDir)
+            cleanup(emptyResponseDir)
+        }
+
+        let serverErrorConfiguration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: Data(),
+            getStatusCode: 503
+        )
+        let (serverErrorRemote, _) = try makeRemoteAndTransport(
+            cacheDirectory: serverErrorDir,
+            configuration: serverErrorConfiguration
+        )
+        do {
+            _ = try await serverErrorRemote.load()
+            XCTFail("A server error should fail loading")
+        } catch EmbeddedDatabase.Error.downloadFailed(let message) {
+            XCTAssertTrue(message.contains("HTTP 503"))
+        }
+
+        let emptyResponseConfiguration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: Data()
+        )
+        let (emptyResponseRemote, _) = try makeRemoteAndTransport(
+            cacheDirectory: emptyResponseDir,
+            configuration: emptyResponseConfiguration
+        )
+        do {
+            _ = try await emptyResponseRemote.load()
+            XCTFail("An empty response should fail loading")
+        } catch EmbeddedDatabase.Error.invalidResponse {
+            // Expected.
+        }
+    }
+
     // MARK: - Bundled Database Tests
 
     func testBundledDatabaseFallback() async throws {
@@ -361,7 +589,7 @@ final class RemoteDatabaseTests: XCTestCase {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(
+        let remote = try makeRemote(
             cacheDirectory: tempDir,
             bundledDatabasePath: bundledPath
         )
@@ -388,7 +616,7 @@ final class RemoteDatabaseTests: XCTestCase {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(
+        let remote = try makeRemote(
             cacheDirectory: tempDir,
             bundledDatabasePath: bundledPath
         )
@@ -411,7 +639,7 @@ final class RemoteDatabaseTests: XCTestCase {
         }
 
         // Next load should use downloaded cache, not bundled
-        let remote2 = RemoteDatabase(
+        let remote2 = try makeRemote(
             cacheDirectory: tempDir,
             bundledDatabasePath: bundledPath
         )
@@ -429,14 +657,14 @@ final class RemoteDatabaseTests: XCTestCase {
         defer { cleanup(tempDir) }
 
         // First, create a cache by loading without bundled path
-        let remote1 = RemoteDatabase(cacheDirectory: tempDir)
+        let remote1 = try makeRemote(cacheDirectory: tempDir)
         let downloadedDB = try await remote1.load()
         let downloadedCount = downloadedDB.entryCount
         let isCached1 = await remote1.isCached()
         XCTAssertTrue(isCached1, "Should have cache")
 
         // Now create instance with bundled path - should still use cache
-        let remote2 = RemoteDatabase(
+        let remote2 = try makeRemote(
             cacheDirectory: tempDir,
             bundledDatabasePath: bundledPath
         )
@@ -451,7 +679,7 @@ final class RemoteDatabaseTests: XCTestCase {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(
+        let remote = try makeRemote(
             cacheDirectory: tempDir,
             bundledDatabasePath: "/nonexistent/path/to/database.ultra"
         )
@@ -469,7 +697,7 @@ final class RemoteDatabaseTests: XCTestCase {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let remote = try makeRemote(cacheDirectory: tempDir)
         let db = try await remote.load()
 
         // Test well-known IPs
@@ -503,7 +731,7 @@ final class RemoteDatabaseTests: XCTestCase {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let remote = try makeRemote(cacheDirectory: tempDir)
         let db = try await remote.load()
 
         // 8.8.8.8 as UInt32: (8 << 24) | (8 << 16) | (8 << 8) | 8 = 134744072
@@ -519,7 +747,7 @@ final class RemoteDatabaseTests: XCTestCase {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let remote = try makeRemote(cacheDirectory: tempDir)
         let db = try await remote.load()
 
         // Generate random IPs for testing
@@ -539,7 +767,7 @@ final class RemoteDatabaseTests: XCTestCase {
         defer { cleanup(tempDir) }
 
         // Pre-populate cache
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let remote = try makeRemote(cacheDirectory: tempDir)
         _ = try await remote.load()
 
         // Get the cache path and measure loading directly from file
@@ -560,7 +788,7 @@ final class RemoteDatabaseTests: XCTestCase {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let (remote, transport) = try makeRemoteAndTransport(cacheDirectory: tempDir)
 
         // Multiple concurrent loads should all succeed and return same data
         async let db1 = remote.load()
@@ -571,13 +799,44 @@ final class RemoteDatabaseTests: XCTestCase {
 
         XCTAssertEqual(r1.entryCount, r2.entryCount)
         XCTAssertEqual(r2.entryCount, r3.entryCount)
+        let requestedMethods = await transport.requestedMethods()
+        XCTAssertEqual(requestedMethods, ["GET"])
+    }
+
+    func testRemoteDatabaseConcurrentLoadAndRefreshShareDownload() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: try embeddedDatabaseData(),
+            delayNanoseconds: 50_000_000
+        )
+        let (remote, transport) = try makeRemoteAndTransport(
+            cacheDirectory: tempDir,
+            configuration: configuration
+        )
+
+        async let loadedDatabase = remote.load()
+        async let refreshResult = remote.refresh()
+        let (database, result) = try await (loadedDatabase, refreshResult)
+
+        XCTAssertGreaterThan(database.entryCount, 100_000)
+        guard case .updated(let refreshedDatabase) = result else {
+            XCTFail("Refresh without existing metadata should report an update")
+            return
+        }
+        XCTAssertEqual(refreshedDatabase.entryCount, database.entryCount)
+
+        let requestedMethods = await transport.requestedMethods()
+        XCTAssertEqual(requestedMethods.filter { $0 == "GET" }.count, 1)
+        XCTAssertEqual(requestedMethods.filter { $0 == "HEAD" }.count, 1)
     }
 
     func testRemoteDatabaseConcurrentLookups() async throws {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let remote = try makeRemote(cacheDirectory: tempDir)
         let db = try await remote.load()
 
         // Concurrent lookups should all work correctly
@@ -614,7 +873,7 @@ final class RemoteDatabaseTests: XCTestCase {
             throw XCTSkip("No embedded database to test with")
         }
 
-        let remote = RemoteDatabase(
+        let remote = try makeRemote(
             cacheDirectory: tempDir,
             bundledDatabasePath: bundledPath
         )
@@ -634,13 +893,15 @@ final class RemoteDatabaseTests: XCTestCase {
 
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-        // Point to an invalid remote URL that serves garbage data
-        let invalidFileURL = tempDir.appendingPathComponent("invalid.txt")
-        try "invalid content".write(to: invalidFileURL, atomically: true, encoding: .utf8)
-
+        let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: Data("invalid content".utf8)
+        )
+        let transport = StubRemoteDatabaseHTTPTransport(configuration: configuration)
         let remote = RemoteDatabase(
-            remoteURL: invalidFileURL,
-            cacheDirectory: tempDir
+            remoteURL: fixtureRemoteURL,
+            cacheDirectory: tempDir,
+            bundledDatabasePath: nil,
+            httpTransport: transport
         )
 
         // Loading should fail due to invalid format of the downloaded URL
@@ -656,11 +917,35 @@ final class RemoteDatabaseTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: cachePath), "Cache should not be written for invalid database")
     }
 
+    func testRemoteDatabaseRejectsTruncatedDatabaseWithoutCaching() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let validData = try embeddedDatabaseData()
+        let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: Data(validData.prefix(128))
+        )
+        let (remote, _) = try makeRemoteAndTransport(
+            cacheDirectory: tempDir,
+            configuration: configuration
+        )
+
+        do {
+            _ = try await remote.load()
+            XCTFail("A truncated database should fail validation")
+        } catch {
+            // The format reader owns the specific corruption error.
+        }
+
+        let cachePath = tempDir.appendingPathComponent("ip2asn.ultra").path
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cachePath))
+    }
+
     func testRemoteDatabaseRefreshForcesDownloadIfCacheMissing() async throws {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
-        let remote = RemoteDatabase(cacheDirectory: tempDir)
+        let remote = try makeRemote(cacheDirectory: tempDir)
 
         // Load initially (fetches and caches)
         _ = try await remote.load()

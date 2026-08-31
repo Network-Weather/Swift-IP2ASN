@@ -262,16 +262,14 @@ swift test --filter RemoteDatabaseTests
 swift test --filter EmbeddedDatabaseTests
 ```
 
-The parser, builder, embedded database, and address tests run offline. Tests of
-`RemoteDatabase` currently probe the production CDN and skip when it is
-unavailable. Full source-data and format validation is opt-in:
+The default suite is offline: `RemoteDatabase` behavior uses a deterministic
+stub transport. Live CDN smoke tests and full source-data/format validation are
+opt-in:
 
 ```bash
+IP2ASN_RUN_NETWORK=1 swift test --filter RemoteDatabaseLiveCDNSmokeTests
 IP2ASN_RUN_FORMAT_TESTS=1 swift test
 ```
-
-The roadmap tracks replacing CDN-dependent behavioral tests with deterministic
-local HTTP fixtures.
 
 ## Documentation
 
