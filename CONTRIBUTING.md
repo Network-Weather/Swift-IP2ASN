@@ -187,6 +187,29 @@ When filing issues:
 
 If you find a security vulnerability, please do not open a public issue. Instead, email the maintainers directly or use GitHub's security advisory feature.
 
+## Maintainer Database Publication
+
+The database update workflow opens a pull request containing both
+`ip2asn.ultra` and `ip2asn.manifest.json`. After that pull request is reviewed,
+tested, and merged, verify the committed pair locally:
+
+```bash
+Scripts/publish-database.sh verify
+```
+
+Publishing requires an authenticated Wrangler 4.x session with object-write
+access to the production `networkweather-pkgs` R2 bucket. Publication is an
+explicit operation:
+
+```bash
+Scripts/publish-database.sh publish
+```
+
+The script validates the local digest and byte count before upload, publishes
+the database before its manifest, downloads both through
+`pkgs.networkweather.com`, validates them again, and requires a conditional
+database request to return `304 Not Modified`.
+
 ## License
 
 By contributing to SwiftIP2ASN, you agree that your contributions will be licensed under the MIT License.

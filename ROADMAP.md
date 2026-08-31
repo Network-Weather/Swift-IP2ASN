@@ -1,22 +1,25 @@
 # SwiftIP2ASN Roadmap
 
-Last reviewed: 2026-08-30
+Last reviewed: 2026-08-31
 
-This roadmap describes the intended direction of SwiftIP2ASN after the 0.4
-dual-stack release. It is an ordered plan, not a calendar commitment. Minor
+This roadmap describes the intended direction of SwiftIP2ASN after the 0.5
+provenance release. It is an ordered plan, not a calendar commitment. Minor
 release numbers may change as work is scoped, but correctness and compatibility
 work should land before feature or platform expansion.
 
 ## Current Baseline
 
-SwiftIP2ASN 0.4.1 provides:
+SwiftIP2ASN 0.5.0 provides:
 
 - offline IPv4 and IPv6 ASN lookups from an embedded database;
 - the ULT2 ultra-compact database format and builder;
 - a `Sendable`, immutable lookup database;
-- an actor-based remote database with persistent caching and manual refresh;
+- typed lookup results while retaining the 0.x tuple APIs;
+- reproducible database metadata and machine-readable provenance manifests;
+- an actor-based remote database with persistent caching, conditional refresh,
+  and observable status;
 - a command-line tool for building, querying, and benchmarking databases;
-- weekly embedded-database update automation; and
+- weekly embedded-database update automation and reviewed R2 publication; and
 - SwiftPM support for current Apple platforms.
 
 There is no committed feature backlog beyond this document. New work should be
@@ -48,7 +51,7 @@ Roadmap decisions follow these principles:
 
 ## Delivery Sequence
 
-`0.4.x reliability → 0.5 provenance → 0.6 API → 0.7 Linux → 1.0 contract`
+`0.6 CLI and API completion → 0.7 Linux → 1.0 contract`
 
 Items are ordered within each milestone. A milestone should satisfy its exit
 criteria before work depending on it is considered complete: metadata builds on
@@ -56,120 +59,9 @@ the hardened parser and transport, typed results build on the metadata decision,
 and Linux support follows the intended long-term API rather than porting symbols
 that are about to be retired.
 
-## Milestone 0.4.x — Establish a Reliable Baseline
-
-Goal: remove ambiguity and nondeterminism from the existing product before
-adding new public behavior.
-
-### Public contract and documentation
-
-- [x] Reconcile README and DocC content with the actual public API, including
-      removal of references to the retired trie, mutable database, and fetching
-      architecture.
-- [x] Publish the actual Swift toolchain and platform support policy.
-- [x] Document which tests are offline, opt-in validation, performance, or live
-      CDN smoke tests.
-- [x] Decide and document the status of `ASNInfo`, the legacy compressed format,
-      and its CLI commands. Do not remove them silently.
-
-### Simple API state semantics
-
-- [x] Define whether repeated `IP2ASN.remote(bundledPath:)` calls may select
-      different bundles. The current first-path-wins behavior must not remain
-      implicit.
-- [x] Make `refresh()`, `isCached()`, and `clearCache()` operate on a clearly
-      identified remote-database configuration.
-- [x] Cover transitions between the default, bundled, cached, cleared, and
-      refreshed states with tests.
-- [x] Keep direct `RemoteDatabase` construction as the explicit API for callers
-      needing multiple independent configurations.
-
-### Deterministic remote-update tests
-
-- [x] Introduce an injectable HTTP transport or session so cache and refresh
-      tests do not depend on the production CDN.
-- [x] Test `200`, `304`, missing validators, unsupported `HEAD`, timeouts,
-      truncated responses, invalid database payloads, and server errors locally.
-- [x] Keep a small, separately identified live-CDN smoke test; it may skip when
-      the network is unavailable without hiding failures in offline behavior.
-- [x] Verify concurrent `load()` and `refresh()` calls do not perform redundant
-      downloads or expose partially updated state.
-
-### Parser and cache hardening
-
-- [x] Validate declared counts against available input before reserving memory.
-- [x] Reject integer overflow, reversed ranges, invalid ordering, and malformed
-      name-table data.
-- [x] Replace broad `corruptedData` failures with specific public validation
-      diagnostics before stabilizing the error contract.
-- [x] Add a corpus of malformed ULT2 fixtures.
-- [x] Add fuzz or property-based parser coverage.
-- [x] Verify database and metadata writes remain atomic and coherent across
-      cancellation and process interruption.
-
-### Exit criteria
-
-- The default test suite is fully offline and deterministic.
-- Live-network tests are isolated and clearly reported.
-- All supported Apple-platform builds pass in CI using the documented minimum
-  Swift 6.1 toolchain.
-- Public documentation names only APIs that exist and states the 6.1 toolchain
-  requirement accurately.
-- The simple API has documented, tested configuration semantics.
-
-## Milestone 0.5 — Make Database Freshness Observable and Efficient
-
-Goal: let applications identify, audit, and refresh the database without
-guesswork or unnecessary requests.
-
-### Database metadata
-
-- [x] Define public `DatabaseMetadata` containing at least the format version,
-      generation timestamp, source identifier, IPv4 and IPv6 range counts, and
-      a stable build identifier.
-- [x] Extend ULT2 additively, using its reserved flags or a compatible trailer,
-      so existing 0.4 readers can continue reading new files.
-- [x] Expose metadata on `UltraCompactDatabase` and distinguish embedded,
-      bundled, disk-cache, and downloaded origins where that distinction is
-      meaningful.
-- [x] Make metadata reproducible: identical normalized inputs and builder
-      settings must produce the same build identifier and database bytes.
-
-The source country field may be considered for a later result-format extension,
-but it must be documented as routing-data attribution, not IP geolocation.
-
-### Refresh protocol
-
-- [x] Replace the mandatory `HEAD`-then-`GET` flow with conditional requests
-      (`If-None-Match` and `If-Modified-Since`) or document why a two-request
-      flow remains necessary.
-- [x] Return useful refresh state, including the database metadata and whether
-      the active database came from a bundle, cache, or download.
-- [x] Define behavior for servers without ETags or Last-Modified headers.
-- [x] Expose last successful check/update information without adding automatic
-      background scheduling to the library.
-
-### Artifact provenance
-
-- [ ] Publish a machine-readable build manifest alongside hosted databases.
-- [x] Include source URLs, source digests, builder version, output digest,
-      counts, and generation time in the manifest.
-- [x] Decide the trust model for hosted artifacts. A checksum detects accidental
-      corruption but is not authenticity when served from the same origin; if
-      authenticity is required, use a signed manifest and a pinned public key.
-- [x] Add update-workflow sanity thresholds for unexpected range-count or file
-      size changes, while allowing an explicit maintainer override.
-
-### Exit criteria
-
-- A caller can report exactly which database build is active.
-- An unchanged remote database requires one conditional request and no body
-  download.
-- Bundled and cached databases can be compared using database metadata rather
-  than cache-file presence alone.
-- Newly generated databases remain readable by the 0.4 ULT2 reader.
-- The hosted artifact can be traced back to normalized source inputs and a
-  builder version.
+Reliability hardening and provenance work completed in the 0.4.x and 0.5 lines
+is recorded in `CHANGELOG.md`. Active milestones below contain only remaining
+work.
 
 ## Milestone 0.6 — Stabilize the Lookup API
 
@@ -178,30 +70,15 @@ migration path toward 1.0.
 
 ### Typed results
 
-- [x] Introduce a small `ASNLookupResult` value type with `asn` and `name` as
-      its guaranteed fields.
-- [x] Evaluate including the matched start/end range. The initial result omits
-      it until a dedicated non-CIDR range type can describe the source's exact
-      inclusive boundaries without implying canonical CIDR semantics.
-- [x] Defer country attribution: the current source field is routing-data
-      attribution rather than IP geolocation, and ULT2 does not encode it.
-- [x] Deprecate `ASNInfo` in favor of the lookup result because its registry,
-      allocation date, and country fields lack reliable stored data.
-
-Because Swift cannot overload a method only by return type, the tuple-returning
-`lookup` API should remain available during 0.x under its existing signature.
-Typed results should first use a distinct method name, followed by a documented
-1.0 migration decision.
+`ASNLookupResult` and type-safe `IPAddress` inputs shipped in 0.5. The
+tuple-returning `lookup` API remains available during 0.x because Swift cannot
+overload a method only by return type. The 1.0 migration decision remains part
+of this milestone.
 
 ### Address and batch APIs
 
-- [x] Add lookup from `IPAddress` so parsed addresses can be reused.
-- [x] Review the public raw `(hi, lo)` IPv6 API and provide a type-safe
-      alternative before considering deprecation.
 - [ ] Add a batch lookup API only after measuring its benefit over a caller loop;
       specify input-order preservation and miss representation.
-- [x] Document string parsing, invalid-address, private-address, and unrouted
-      behavior consistently.
 
 ### Builder and CLI usability
 

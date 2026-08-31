@@ -25,7 +25,7 @@ Add the following to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.4.1")
+    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.5.0")
 ]
 ```
 
@@ -228,8 +228,9 @@ and the same build identifier.
 Automated database updates also write `ip2asn.manifest.json`. Its versioned JSON
 schema records source URLs, SHA-256 digests of the downloaded archives and
 decompressed builder inputs, the builder Git revision, output digest, database
-build identifier, range counts, and generation time. The database and manifest
-should be published together.
+build identifier, range counts, and generation time. The production manifest is
+published alongside the database at
+<https://pkgs.networkweather.com/db/ip2asn-v2.manifest.json>.
 
 The manifest provides checksums and an audit trail; it is not a cryptographic
 signature. Authenticity currently depends on HTTPS plus the repository's
@@ -312,7 +313,10 @@ All database types are `Sendable` and safe for concurrent access:
 
 ## Data Sources
 
-The library uses data from [iptoasn.com](https://iptoasn.com), which aggregates BGP routing information from global route collectors. The hosted database at `pkgs.networkweather.com` is updated daily.
+The library uses data from [iptoasn.com](https://iptoasn.com), which aggregates
+BGP routing information from global route collectors. The repository checks for
+updates weekly; reviewed database and manifest pairs are then published to
+`pkgs.networkweather.com`.
 
 ## Requirements
 

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-31
+
+### Breaking
+- `UltraCompactError` can now report `validationFailed(_:)`. Exhaustive
+  switches over this public enum must handle the new case; the deprecated
+  `corruptedData` case remains available for source compatibility.
+
 ### Added
 - Project roadmap covering reliability, provenance, API stabilization, Linux support, and the path to 1.0.
 - `IP2ASNDataPrep` as an explicit SwiftPM library product, matching the documented custom database builder API.
@@ -16,6 +23,11 @@ All notable changes to this project will be documented in this file.
 - Detailed remote refresh/status APIs exposing database identity, runtime origin, and persisted successful check/update timestamps.
 - Reproducible JSON build manifests with source/output digests, builder revision, generation time, and database counts.
 - `ASNLookupResult` and additive typed lookup overloads for strings, parsed `IPAddress` values, IPv4 integers, and IPv6 pairs.
+- A guarded R2 publication script that verifies database provenance before
+  upload and validates the public database, manifest, and conditional refresh
+  behavior afterward.
+- The provenance manifest as a declared SwiftPM resource alongside the embedded
+  database.
 
 ### Changed
 - Corrected README, DocC, contributor, and source documentation to match the current API, database size, documentation URL, and Swift 6.1 toolchain requirement.
@@ -31,6 +43,8 @@ All notable changes to this project will be documented in this file.
 - Replaced the `HEAD`-then-`GET` refresh flow with one conditional `GET`; servers without validators receive an unconditional download on each refresh.
 - Database updates now retain exact source archives, emit provenance manifests, and reject size or range-count changes over 20% unless explicitly overridden.
 - Deprecated `ASNInfo`, whose registry, allocation date, and country fields cannot be populated reliably from ULT2 data; tuple lookup APIs remain available during 0.x.
+- Refreshed the embedded and hosted dual-stack database to the August 31, 2026
+  iptoasn.com snapshot and published its provenance manifest.
 
 ## [0.4.1] - 2026-07-14
 

@@ -1,3 +1,5 @@
+import Foundation
+import IP2ASNDataPrep
 import XCTest
 
 @testable import SwiftIP2ASN
@@ -55,10 +57,10 @@ final class EmbeddedDatabaseTests: XCTestCase {
         }
     }
 
-    /// Packaging integrity check: verifies the resource bundle and database are
-    /// present, loadable, and contain a reasonable number of entries.
-    /// This test hard-fails (not XCTSkip) because a missing database means a
-    /// broken release that will crash or degrade at runtime.
+    /// Packaging integrity check: verifies the resource bundle, database, and
+    /// provenance manifest are present, mutually consistent, and loadable.
+    /// This test hard-fails (not XCTSkip) because missing or mismatched release
+    /// artifacts mean the package cannot establish its embedded provenance.
     func testEmbeddedDatabasePackagingIntegrity() throws {
         // 1. safeModule must find the resource bundle
         let bundle = Bundle.safeModule
@@ -68,19 +70,37 @@ final class EmbeddedDatabaseTests: XCTestCase {
         let url = bundle?.url(forResource: "ip2asn", withExtension: "ultra")
         XCTAssertNotNil(url, "ip2asn.ultra must be present in the resource bundle")
 
-        // 3. File should be non-trivial (current DB is ~3.4 MB)
+        // 3. The provenance manifest must be packaged alongside the database
+        let manifestURL = bundle?.url(forResource: "ip2asn", withExtension: "manifest.json")
+        XCTAssertNotNil(manifestURL, "ip2asn.manifest.json must be present in the resource bundle")
+
+        // 4. File should be non-trivial (current DB is ~4.2 MB)
         if let path = url?.path {
             let attrs = try FileManager.default.attributesOfItem(atPath: path)
             let size = attrs[.size] as? UInt64 ?? 0
             XCTAssertGreaterThan(size, 1_000_000, "ip2asn.ultra should be >1 MB (got \(size) bytes)")
         }
 
-        // 4. Database must load and contain substantial data
+        // 5. Database must load and contain substantial data
         let db = try EmbeddedDatabase.loadUltraCompact()
         XCTAssertGreaterThan(db.entryCount, 100_000,
             "Embedded DB should have >100k entries (got \(db.entryCount))")
         XCTAssertGreaterThan(db.uniqueASNCount, 10_000,
             "Embedded DB should have >10k unique ASNs (got \(db.uniqueASNCount))")
+
+        // 6. The packaged manifest must describe the exact packaged bytes
+        let databaseURL = try XCTUnwrap(url)
+        let packagedManifestURL = try XCTUnwrap(manifestURL)
+        let databaseData = try Data(contentsOf: databaseURL)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let manifest = try decoder.decode(
+            DatabaseBuildManifest.self,
+            from: Data(contentsOf: packagedManifestURL)
+        )
+        XCTAssertEqual(manifest.output.artifact.byteCount, databaseData.count)
+        XCTAssertEqual(manifest.output.artifact.sha256, StableSHA256.hexDigest(databaseData))
+        XCTAssertEqual(manifest.output.buildIdentifier, db.metadata.buildIdentifier)
     }
 
     func testEmbeddedUltraLookups() throws {

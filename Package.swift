@@ -27,7 +27,8 @@ let package = Package(
         .target(
             name: "SwiftIP2ASN",
             resources: [
-                .process("Resources/ip2asn.ultra")
+                .process("Resources/ip2asn.ultra"),
+                .process("Resources/ip2asn.manifest.json")
             ]
         ),
         .target(
