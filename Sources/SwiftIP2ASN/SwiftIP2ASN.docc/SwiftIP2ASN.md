@@ -29,8 +29,8 @@ import SwiftIP2ASN
 // Load the embedded dual-stack database (~4 MB)
 let db = try EmbeddedDatabase.loadUltraCompact()
 
-// Perform lookups
-if let result = db.lookup("8.8.8.8") {
+// Perform a typed lookup
+if let result = db.lookupResult("8.8.8.8") {
     print("AS\(result.asn): \(result.name ?? "Unknown")")
     // Output: AS15169: GOOGLE
 }
@@ -92,6 +92,22 @@ Legacy ULT2 databases have no encoded generation timestamp or source identifier,
 so those two properties are `nil`. Their range counts and stable build identifier
 remain available.
 
+### Lookup Semantics
+
+Use `lookupResult(_:)` with a string or an already parsed ``IPAddress``. Invalid
+strings and valid addresses missing from the routing dataset return `nil`:
+
+```swift
+let address = IPAddress(string: "2001:4860:4860::8888")!
+if let result = db.lookupResult(address) {
+    print("AS\(result.asn): \(result.name ?? "Unknown")")
+}
+```
+
+``ASNLookupResult`` reports only the BGP-origin ASN and source-provided name. It
+does not represent IP geolocation, legal ownership, or a canonical CIDR prefix.
+Existing tuple-returning lookup methods remain available during the 0.x line.
+
 ## Topics
 
 ### Essentials
@@ -100,6 +116,7 @@ remain available.
 - ``EmbeddedDatabase``
 - ``RemoteDatabase``
 - ``UltraCompactDatabase``
+- ``ASNLookupResult``
 - ``DatabaseMetadata``
 - ``DatabaseOrigin``
 
@@ -130,5 +147,4 @@ BGP routing data from global route collectors. The hosted database at
 
 ## Requirements
 
-- Swift 6.1+
-- macOS 13.0+ / iOS 16.0+ / tvOS 16.0+ / watchOS 9.0+
+Swift 6.1 or newer and macOS 13.0, iOS 16.0, tvOS 16.0, or watchOS 9.0 or newer.

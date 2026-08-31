@@ -548,10 +548,13 @@ public struct UltraCompactDatabase: Sendable {
 
     // MARK: - Lookup
 
-    /// Look up ASN for an IPv4 or IPv6 address given as a string.
+    /// Looks up an IPv4 or IPv6 string using the legacy tuple result.
+    ///
+    /// This method remains available for source compatibility. New code can use
+    /// `lookupResult(_:)` for a named ``ASNLookupResult`` value.
     public func lookup(_ ipString: String) -> (asn: UInt32, name: String?)? {
-        if let v4 = parseIPv4ToUInt32(ipString) {
-            return lookup(ip: v4)
+        if let ipv4 = parseIPv4ToUInt32(ipString) {
+            return lookup(ip: ipv4)
         }
         if let (hi, lo) = parseIPv6ToPair(ipString) {
             return lookupV6(hi: hi, lo: lo)
@@ -559,8 +562,80 @@ public struct UltraCompactDatabase: Sendable {
         return nil
     }
 
-    /// Look up ASN for an IPv4 address given as UInt32.
+    /// Looks up an IPv4 integer using the legacy tuple result.
+    ///
+    /// This method remains available for source compatibility. New code can use
+    /// ``lookupResult(ip:)`` for a named ``ASNLookupResult`` value.
     public func lookup(ip: UInt32) -> (asn: UInt32, name: String?)? {
+        guard let index = ipv4RangeIndex(containing: ip) else { return nil }
+        let asn = v4Asns[index]
+        return (asn, asnNames[asn])
+    }
+
+    /// Looks up a raw IPv6 pair using the legacy tuple result.
+    ///
+    /// The pair is in network byte order. New code should generally construct an
+    /// ``IPAddress`` and call `lookupResult(_:)` instead.
+    public func lookupV6(hi: UInt64, lo: UInt64) -> (asn: UInt32, name: String?)? {
+        guard let index = ipv6RangeIndex(containingHi: hi, lo: lo) else { return nil }
+        let asn = v6Asns[index]
+        return (asn, asnNames[asn])
+    }
+
+    /// Looks up an IPv4 or IPv6 address string.
+    ///
+    /// Invalid strings, valid but unrouted addresses, private addresses absent
+    /// from the source data, and other database misses all return `nil`.
+    public func lookupResult(_ ipString: String) -> ASNLookupResult? {
+        if let ipv4 = parseIPv4ToUInt32(ipString) {
+            return lookupResult(ip: ipv4)
+        }
+        if let (hi, lo) = parseIPv6ToPair(ipString) {
+            return lookupResultV6(hi: hi, lo: lo)
+        }
+        return nil
+    }
+
+    /// Looks up an already parsed IPv4 or IPv6 address.
+    ///
+    /// Use this overload to avoid parsing the same address more than once.
+    public func lookupResult(_ address: IPAddress) -> ASNLookupResult? {
+        if let ipv4 = address.ipv4UInt32 {
+            return lookupResult(ip: ipv4)
+        }
+
+        let bytes = address.rawBytes
+        guard bytes.count == 16 else { return nil }
+        var hi: UInt64 = 0
+        var lo: UInt64 = 0
+        for byte in bytes[..<8] {
+            hi = (hi << 8) | UInt64(byte)
+        }
+        for byte in bytes[8...] {
+            lo = (lo << 8) | UInt64(byte)
+        }
+        return lookupResultV6(hi: hi, lo: lo)
+    }
+
+    /// Looks up an IPv4 address encoded in network byte order.
+    public func lookupResult(ip: UInt32) -> ASNLookupResult? {
+        guard let index = ipv4RangeIndex(containing: ip) else { return nil }
+        let asn = v4Asns[index]
+        return ASNLookupResult(asn: asn, name: asnNames[asn])
+    }
+
+    /// Looks up an IPv6 address encoded as a network-byte-order pair.
+    ///
+    /// `lookupResult(_:)` provides a type-safe alternative for
+    /// callers that already have an ``IPAddress``.
+    public func lookupResultV6(hi: UInt64, lo: UInt64) -> ASNLookupResult? {
+        guard let index = ipv6RangeIndex(containingHi: hi, lo: lo) else { return nil }
+        let asn = v6Asns[index]
+        return ASNLookupResult(asn: asn, name: asnNames[asn])
+    }
+
+    @inline(__always)
+    private func ipv4RangeIndex(containing ip: UInt32) -> Int? {
         guard !v4StartIPs.isEmpty else { return nil }
         var left = 0
         var right = v4StartIPs.count - 1
@@ -571,15 +646,14 @@ public struct UltraCompactDatabase: Sendable {
             } else if ip > v4EndIPs[mid] {
                 left = mid + 1
             } else {
-                let asn = v4Asns[mid]
-                return (asn, asnNames[asn])
+                return mid
             }
         }
         return nil
     }
 
-    /// Look up ASN for an IPv6 address given as a (hi, lo) UInt64 pair (network byte order).
-    public func lookupV6(hi: UInt64, lo: UInt64) -> (asn: UInt32, name: String?)? {
+    @inline(__always)
+    private func ipv6RangeIndex(containingHi hi: UInt64, lo: UInt64) -> Int? {
         guard !v6StartHi.isEmpty else { return nil }
         var left = 0
         var right = v6StartHi.count - 1
@@ -590,8 +664,7 @@ public struct UltraCompactDatabase: Sendable {
             } else if compare128(hi, lo, v6EndHi[mid], v6EndLo[mid]) > 0 {
                 left = mid + 1
             } else {
-                let asn = v6Asns[mid]
-                return (asn, asnNames[asn])
+                return mid
             }
         }
         return nil

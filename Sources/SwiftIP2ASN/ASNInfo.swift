@@ -3,9 +3,9 @@ import Foundation
 /// Legacy ASN metadata model retained for source compatibility.
 ///
 /// `UltraCompactDatabase` does not return this type because the ULT2 source
-/// data does not provide reliable values for all of its fields. New lookup code
-/// should use the result returned by `UltraCompactDatabase.lookup` until a
-/// dedicated typed lookup result is introduced.
+/// data does not provide reliable values for all of its fields. Use
+/// ``ASNLookupResult`` for new lookup code.
+@available(*, deprecated, message: "Use ASNLookupResult; ULT2 cannot populate every ASNInfo field reliably.")
 public struct ASNInfo: Sendable, Codable, Equatable {
     public let asn: UInt32
     public let countryCode: String?

@@ -178,14 +178,15 @@ migration path toward 1.0.
 
 ### Typed results
 
-- [ ] Introduce a small `ASNLookupResult` value type with `asn` and `name` as
+- [x] Introduce a small `ASNLookupResult` value type with `asn` and `name` as
       its guaranteed fields.
-- [ ] Evaluate including the matched start/end range. Avoid claiming CIDR
-      semantics unless the source range is proven to be a canonical CIDR.
-- [ ] If country attribution is added, define its source and limitations and
-      encode it without materially regressing load time or memory use.
-- [ ] Resolve `ASNInfo`: either deprecate it in favor of the lookup result or
-      redefine it only if every retained field has a reliable data source.
+- [x] Evaluate including the matched start/end range. The initial result omits
+      it until a dedicated non-CIDR range type can describe the source's exact
+      inclusive boundaries without implying canonical CIDR semantics.
+- [x] Defer country attribution: the current source field is routing-data
+      attribution rather than IP geolocation, and ULT2 does not encode it.
+- [x] Deprecate `ASNInfo` in favor of the lookup result because its registry,
+      allocation date, and country fields lack reliable stored data.
 
 Because Swift cannot overload a method only by return type, the tuple-returning
 `lookup` API should remain available during 0.x under its existing signature.
@@ -194,12 +195,12 @@ Typed results should first use a distinct method name, followed by a documented
 
 ### Address and batch APIs
 
-- [ ] Add lookup from `IPAddress` so parsed addresses can be reused.
-- [ ] Review the public raw `(hi, lo)` IPv6 API and provide a type-safe
+- [x] Add lookup from `IPAddress` so parsed addresses can be reused.
+- [x] Review the public raw `(hi, lo)` IPv6 API and provide a type-safe
       alternative before considering deprecation.
 - [ ] Add a batch lookup API only after measuring its benefit over a caller loop;
       specify input-order preservation and miss representation.
-- [ ] Document string parsing, invalid-address, private-address, and unrouted
+- [x] Document string parsing, invalid-address, private-address, and unrouted
       behavior consistently.
 
 ### Builder and CLI usability

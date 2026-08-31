@@ -41,7 +41,7 @@ private struct URLSessionRemoteDatabaseHTTPTransport: RemoteDatabaseHTTPTranspor
 ///
 /// ### Loading the Database
 ///
-/// - ``loadUltraCompact()``
+/// - ``loadUltraCompact(from:)``
 ///
 /// ### Errors
 ///

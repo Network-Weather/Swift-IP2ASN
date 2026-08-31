@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - A backward-compatible flagged ULT2 metadata trailer and reproducible builder metadata settings.
 - Detailed remote refresh/status APIs exposing database identity, runtime origin, and persisted successful check/update timestamps.
 - Reproducible JSON build manifests with source/output digests, builder revision, generation time, and database counts.
+- `ASNLookupResult` and additive typed lookup overloads for strings, parsed `IPAddress` values, IPv4 integers, and IPv6 pairs.
 
 ### Changed
 - Corrected README, DocC, contributor, and source documentation to match the current API, database size, documentation URL, and Swift 6.1 toolchain requirement.
@@ -29,6 +30,7 @@ All notable changes to this project will be documented in this file.
 - The database update workflow now records its UTC generation time and `iptoasn.com` source identifier in generated artifacts.
 - Replaced the `HEAD`-then-`GET` refresh flow with one conditional `GET`; servers without validators receive an unconditional download on each refresh.
 - Database updates now retain exact source archives, emit provenance manifests, and reject size or range-count changes over 20% unless explicitly overridden.
+- Deprecated `ASNInfo`, whose registry, allocation date, and country fields cannot be populated reliably from ULT2 data; tuple lookup APIs remain available during 0.x.
 
 ## [0.4.1] - 2026-07-14
 

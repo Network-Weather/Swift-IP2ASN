@@ -41,8 +41,8 @@ import SwiftIP2ASN
 // Load embedded database (no network required)
 let db = try IP2ASN.embedded()
 
-// Perform lookups
-if let result = db.lookup("8.8.8.8") {
+// Perform a typed lookup
+if let result = db.lookupResult("8.8.8.8") {
     print("AS\(result.asn): \(result.name ?? "Unknown")")
     // Output: AS15169: GOOGLE
 }
@@ -58,7 +58,7 @@ import SwiftIP2ASN
 // First call downloads (~4 MB), subsequent calls use cache
 let db = try await IP2ASN.remote()
 
-if let result = db.lookup("8.8.8.8") {
+if let result = db.lookupResult("8.8.8.8") {
     print("AS\(result.asn): \(result.name ?? "Unknown")")
 }
 
@@ -110,6 +110,26 @@ print(db.origin) // embedded, bundled, diskCache, downloaded, file, or memory
 
 Legacy ULT2 files have `nil` generation and source values because those fields
 were not encoded, but still receive a deterministic build identifier.
+
+### Lookup Semantics
+
+`lookupResult(_:)` returns an `ASNLookupResult` with the BGP-origin ASN and the
+source-provided AS name. It accepts either an address string or an already parsed
+`IPAddress`; `lookupResult(ip:)` supports raw IPv4 integers. Invalid strings and
+valid addresses absent from the routing dataset—including typical private,
+loopback, and unrouted addresses—return `nil`.
+
+```swift
+let address = IPAddress(string: "2001:4860:4860::8888")!
+if let result = db.lookupResult(address) {
+    print("AS\(result.asn): \(result.name ?? "Unknown")")
+}
+```
+
+Results do not claim IP geolocation, address ownership, or canonical CIDR
+boundaries. The source stores exact inclusive ranges, but matched boundaries are
+deferred until the library has a dedicated non-CIDR range type. Existing
+tuple-returning `lookup` and `lookupV6` methods remain available during 0.x.
 
 The static `IP2ASN` API maintains one active remote configuration. The most
 recent `remote(bundledPath:)` call selects the configuration used by `refresh()`,
@@ -286,8 +306,9 @@ All database types are `Sendable` and safe for concurrent access:
 - ULT2 is the only production database format. The older compressed format and
   its CLI commands are retained for compatibility during the 0.x release line.
 - `ASNInfo` is retained for source compatibility but is not returned by the
-  ULT2 lookup APIs. New code should use the current lookup result until the
-  typed result API described in the roadmap is available.
+  ULT2 lookup APIs. It is deprecated because its registry, allocation date, and
+  country fields cannot be populated reliably. New code should use
+  `ASNLookupResult`.
 
 ## Data Sources
 
