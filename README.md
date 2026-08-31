@@ -11,6 +11,12 @@ A high-performance Swift 6 library for IP address to ASN (Autonomous System Numb
 - **Offline-First**: Apps can bundle a database for immediate offline functionality
 - **Memory Efficient**: ~4 MB compressed database covers 500K+ IPv4 + 170K+ IPv6 ranges
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the planned work beyond database refreshes,
+including reliability, database provenance, API stabilization, Linux support,
+and the path to 1.0.
+
 ## Installation
 
 ### Swift Package Manager
