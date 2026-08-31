@@ -1,0 +1,44 @@
+{
+  "builder" : {
+    "name" : "Swift-IP2ASN/ip2asn-tools",
+    "version" : "9cd9d4df7678ab7d33a54c10155fe34a789d941b"
+  },
+  "generatedAt" : "2026-08-31T23:16:51Z",
+  "output" : {
+    "artifact" : {
+      "byteCount" : 4233683,
+      "sha256" : "bca0f3abc36fb787baf6a86d70bc0b5d20fbbd90b33ba0b4ba0a3abea7d85137"
+    },
+    "buildIdentifier" : "2d9bf725d1c9f7bb214e3dc8403b193e533a58ddf14d7c4ed0f28369c789565c",
+    "fileName" : "ip2asn.ultra",
+    "formatVersion" : 2,
+    "ipv4RangeCount" : 455832,
+    "ipv6RangeCount" : 121752,
+    "uniqueASNCount" : 86833
+  },
+  "schemaVersion" : 1,
+  "sources" : [
+    {
+      "builderInput" : {
+        "byteCount" : 30349117,
+        "sha256" : "43a0e2ff7d8c90a68df7ebd64ca21eb2099525f0f7c5dbee459ed7c3bc14bafb"
+      },
+      "downloadedArtifact" : {
+        "byteCount" : 6947076,
+        "sha256" : "52b72f0e17702863cd7de833d6a6073fdcb29eb31c0151d942941cb3fc2fad6c"
+      },
+      "url" : "https://iptoasn.com/data/ip2asn-v4.tsv.gz"
+    },
+    {
+      "builderInput" : {
+        "byteCount" : 15069844,
+        "sha256" : "2e45ec60871b849de92859f312d9e3cb8156b1a1a447efa90c22b7e35d4dde57"
+      },
+      "downloadedArtifact" : {
+        "byteCount" : 1990618,
+        "sha256" : "fd89d5c0d8123ded749c14e627f6f35d84749ffb7ec9ae519417de7c4300abd2"
+      },
+      "url" : "https://iptoasn.com/data/ip2asn-v6.tsv.gz"
+    }
+  ]
+}
