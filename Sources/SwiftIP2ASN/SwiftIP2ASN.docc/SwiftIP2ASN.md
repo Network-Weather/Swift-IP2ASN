@@ -15,7 +15,7 @@ is built with Swift 6 concurrency features.
 - **Swift 6 Ready**: Built with actors and Sendable types for thread-safe concurrent access
 - **Automatic Updates**: ``RemoteDatabase`` fetches updates from CDN with ETag-based caching
 - **Offline-First**: Apps can bundle a database for immediate offline functionality
-- **Memory Efficient**: ~4 MB compressed database covers 500K+ IPv4 + 170K+ IPv6 ranges
+- **Memory Efficient**: ~4 MB compressed database covers hundreds of thousands of dual-stack ranges
 
 ## Getting Started
 
@@ -26,7 +26,7 @@ The simplest way to use SwiftIP2ASN is with the pre-built embedded database:
 ```swift
 import SwiftIP2ASN
 
-// Load the embedded dual-stack database (~4 MB, 500K+ IPv4 + 170K+ IPv6 ranges)
+// Load the embedded dual-stack database (~4 MB)
 let db = try EmbeddedDatabase.loadUltraCompact()
 
 // Perform lookups
@@ -84,10 +84,10 @@ Task { try? await remote.refresh() }
 
 - ``IPAddress``
 - ``IPRange``
+
+### Legacy Compatibility
+
 - ``ASNInfo``
-
-### Alternative Formats
-
 - ``CompressedDatabaseFormat``
 
 ## Performance
@@ -107,5 +107,5 @@ BGP routing data from global route collectors. The hosted database at
 
 ## Requirements
 
-- Swift 6.0+
+- Swift 6.1+
 - macOS 13.0+ / iOS 16.0+ / tvOS 16.0+ / watchOS 9.0+

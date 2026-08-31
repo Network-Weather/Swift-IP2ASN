@@ -15,6 +15,9 @@ let package = Package(
         .library(
             name: "SwiftIP2ASN",
             targets: ["SwiftIP2ASN"]),
+        .library(
+            name: "IP2ASNDataPrep",
+            targets: ["IP2ASNDataPrep"]),
         .executable(name: "ip2asn-tools", targets: ["ip2asn-tools"]),
     ],
     dependencies: [

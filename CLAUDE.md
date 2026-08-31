@@ -52,11 +52,11 @@ This is a Swift 6 library for IP-to-ASN lookups via a precomputed ultra-compact 
 **SwiftIP2ASN** (main library) - Runtime lookup functionality:
 - `SwiftIP2ASN.swift` - `IP2ASN` enum: top-level entry point for embedded/remote DB
 - `IPAddress.swift` - Type-safe IPv4/IPv6 representation
-- `ASNInfo.swift` - ASN lookup result type
+- `ASNInfo.swift` - Legacy metadata model retained for source compatibility
 - `UltraCompactFormat.swift` - Ultra-compact on-disk format reader (`UltraCompactDatabase`)
 - `CompressedDatabaseFormat.swift` - Delta-encoded format reader (used by CLI)
-- `EmbeddedDatabase.swift` - Access to bundled database resource
-- `RemoteDatabase.swift` - CDN-hosted database with ETag-based refresh
+- `EmbeddedDatabase.swift` - Access to the bundled resource plus the
+  CDN-hosted `RemoteDatabase` actor with ETag-based refresh
 - `BundleAccessor.swift` - Module-bundle resolution fallback
 
 **IP2ASNDataPrep** (build-time module) - Database construction:

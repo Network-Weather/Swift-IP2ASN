@@ -19,9 +19,8 @@ We welcome contributions to SwiftIP2ASN! This document outlines the process for 
 
 ### Prerequisites
 
-- Xcode 15+ (for Swift 6 support)
+- Xcode 16.3+ on macOS, or another Swift 6.1+ toolchain
 - macOS 13+ / iOS 16+ / tvOS 16+ / watchOS 9+
-- Swift 6.0+
 
 ### Building
 

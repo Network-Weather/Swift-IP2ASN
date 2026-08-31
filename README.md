@@ -9,7 +9,7 @@ A high-performance Swift 6 library for IP address to ASN (Autonomous System Numb
 - **Swift 6 Ready**: Built with `Sendable` value types for thread-safe concurrent access
 - **Automatic Updates**: `RemoteDatabase` fetches updates from CDN with ETag-based caching
 - **Offline-First**: Apps can bundle a database for immediate offline functionality
-- **Memory Efficient**: ~4 MB compressed database covers 500K+ IPv4 + 170K+ IPv6 ranges
+- **Memory Efficient**: ~4 MB compressed database covers hundreds of thousands of dual-stack ranges
 
 ## Roadmap
 
@@ -25,7 +25,7 @@ Add the following to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.4.0")
+    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.4.1")
 ]
 ```
 
@@ -55,7 +55,7 @@ For apps that need fresh data:
 ```swift
 import SwiftIP2ASN
 
-// First call downloads (~3.4 MB), subsequent calls use cache
+// First call downloads (~4 MB), subsequent calls use cache
 let db = try await IP2ASN.remote()
 
 if let result = db.lookup("8.8.8.8") {
@@ -211,7 +211,8 @@ The library uses a binary search on sorted contiguous arrays, providing excellen
 ### Modules
 
 - **SwiftIP2ASN**: Core library with lookup functionality
-- **IP2ASNDataPrep**: Tools for fetching, parsing, and building databases
+- **IP2ASNDataPrep**: Optional library product for parsing TSV input and building databases
+- **ip2asn-tools**: Executable product for database builds, lookups, and load benchmarks
 
 ### Core Components
 
@@ -219,14 +220,21 @@ The library uses a binary search on sorted contiguous arrays, providing excellen
 2. **RemoteDatabase**: Manages automatic updates with persistent caching
 3. **EmbeddedDatabase**: Access to the bundled database resource
 4. **IPAddress/IPRange**: Type-safe IP address representations
-5. **CompressedTrie**: Alternative trie-based lookup structure
+5. **CompressedDatabaseFormat**: Legacy IPv4-only format retained for CLI compatibility
 
 ### Thread Safety
 
 All database types are `Sendable` and safe for concurrent access:
 - `UltraCompactDatabase` is an immutable struct
 - `RemoteDatabase` is an actor with isolated state
-- `ASNDatabase` is an actor for thread-safe mutations
+
+### Legacy Compatibility
+
+- ULT2 is the only production database format. The older compressed format and
+  its CLI commands are retained for compatibility during the 0.x release line.
+- `ASNInfo` is retained for source compatibility but is not returned by the
+  ULT2 lookup APIs. New code should use the current lookup result until the
+  typed result API described in the roadmap is available.
 
 ## Data Sources
 
@@ -234,7 +242,7 @@ The library uses data from [iptoasn.com](https://iptoasn.com), which aggregates 
 
 ## Requirements
 
-- Swift 6.0+
+- Swift 6.1+
 - macOS 13.0+ / iOS 16.0+ / tvOS 16.0+ / watchOS 9.0+
 
 ## Testing
@@ -248,11 +256,20 @@ swift test --filter RemoteDatabaseTests
 swift test --filter EmbeddedDatabaseTests
 ```
 
-Note: Some tests require network access. Core unit tests run offline.
+The parser, builder, embedded database, and address tests run offline. Tests of
+`RemoteDatabase` currently probe the production CDN and skip when it is
+unavailable. Full source-data and format validation is opt-in:
+
+```bash
+IP2ASN_RUN_FORMAT_TESTS=1 swift test
+```
+
+The roadmap tracks replacing CDN-dependent behavioral tests with deterministic
+local HTTP fixtures.
 
 ## Documentation
 
-Full API documentation is available at: https://swift-ip2asn.networkweather.com
+Full API documentation is available at: https://ip2asn.networkweather.com
 
 Generate documentation locally:
 

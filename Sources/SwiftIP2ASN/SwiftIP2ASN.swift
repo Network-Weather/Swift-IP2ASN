@@ -84,7 +84,7 @@ public enum IP2ASN {
 
     /// Load database with automatic CDN updates.
     ///
-    /// On first call, downloads from CDN (~3.4 MB). Subsequent calls use the
+    /// On first call, downloads from CDN (~4 MB). Subsequent calls use the
     /// persistent disk cache. The database is cached in Application Support.
     ///
     /// - Parameter bundledPath: Optional path to a bundled database for offline-first operation.
@@ -106,7 +106,7 @@ public enum IP2ASN {
     /// Check for database updates from CDN.
     ///
     /// Issues a HEAD request first (~200 bytes) to check if an update is available.
-    /// Only downloads the full database (~3.4 MB) if the remote version is newer.
+    /// Only downloads the full database (~4 MB) if the remote version is newer.
     ///
     /// - Returns: The refresh result indicating whether an update was downloaded.
     ///

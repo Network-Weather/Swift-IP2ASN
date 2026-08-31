@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Project roadmap covering reliability, provenance, API stabilization, Linux support, and the path to 1.0.
+- `IP2ASNDataPrep` as an explicit SwiftPM library product, matching the documented custom database builder API.
+
+### Changed
+- Corrected README, DocC, contributor, and source documentation to match the current API, database size, documentation URL, and Swift 6.1 toolchain requirement.
+- Documented the compatibility status of `ASNInfo` and the legacy compressed database format.
+
 ## [0.4.1] - 2026-07-14
 
 ### Added
@@ -142,4 +152,3 @@ Migrate reads to `IP2ASN.embedded()` / `IP2ASN.remote()` returning
   - `build-compressed`, `lookup-compressed`, `bench-compressed`
 - Restructured tests: fast, offline unit tests by default; heavy/network tests opt-in via env vars
 - README updates and release checklist; added CI workflow (macOS) for build + tests
-

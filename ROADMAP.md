@@ -63,13 +63,13 @@ adding new public behavior.
 
 ### Public contract and documentation
 
-- [ ] Reconcile README and DocC content with the actual public API, including
+- [x] Reconcile README and DocC content with the actual public API, including
       removal of references to the retired trie, mutable database, and fetching
       architecture.
-- [ ] Publish the actual Swift toolchain and platform support policy.
-- [ ] Document which tests are offline, opt-in validation, performance, or live
+- [x] Publish the actual Swift toolchain and platform support policy.
+- [x] Document which tests are offline, opt-in validation, performance, or live
       CDN smoke tests.
-- [ ] Decide and document the status of `ASNInfo`, the legacy compressed format,
+- [x] Decide and document the status of `ASNInfo`, the legacy compressed format,
       and its CLI commands. Do not remove them silently.
 
 ### Simple API state semantics
