@@ -55,10 +55,11 @@ actor IP2ASNSharedState {
 ///
 /// `IP2ASN` is a convenience singleton with one active remote configuration.
 /// Each call to ``remote(bundledPath:)`` selects the configuration subsequently
-/// used by ``refresh()``, ``isCached()``, and ``clearCache()``. Calling
-/// `remote()` without a path selects the default configuration again. Create
-/// separate ``RemoteDatabase`` actors with distinct cache directories when an
-/// application needs multiple independent configurations.
+/// used by ``refresh()``, ``refreshDetails()``, ``status()``, ``isCached()``,
+/// and ``clearCache()``. Calling `remote()` without a path selects the default
+/// configuration again. Create separate ``RemoteDatabase`` actors with distinct
+/// cache directories when an application needs multiple independent
+/// configurations.
 public enum IP2ASN {
 
     // MARK: - Shared State
@@ -113,8 +114,8 @@ public enum IP2ASN {
 
     /// Check for database updates from CDN.
     ///
-    /// Issues a HEAD request first (~200 bytes) to check if an update is available.
-    /// Only downloads the full database (~4 MB) if the remote version is newer.
+    /// Sends one conditional `GET`. A current cache receives `304 Not Modified`;
+    /// otherwise the response body is validated and installed atomically.
     ///
     /// - Returns: The refresh result indicating whether an update was downloaded.
     ///
@@ -130,6 +131,22 @@ public enum IP2ASN {
     public static func refresh() async throws -> RemoteDatabase.RefreshResult {
         let db = await shared.databaseForActiveConfiguration()
         return try await db.refresh()
+    }
+
+    /// Refreshes the active configuration and returns database identity, origin,
+    /// and successful check/update timestamps with the outcome.
+    @discardableResult
+    public static func refreshDetails() async throws -> RemoteDatabase.RefreshDetails {
+        let db = await shared.databaseForActiveConfiguration()
+        return try await db.refreshDetails()
+    }
+
+    /// Returns identity and persisted update timestamps for the active remote
+    /// configuration. Database identity is available after `remote()` or a
+    /// refresh has loaded a database in this process.
+    public static func status() async -> RemoteDatabase.Status {
+        let db = await shared.databaseForActiveConfiguration()
+        return await db.status()
     }
 
     /// Check if a downloaded database cache exists.

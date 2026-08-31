@@ -220,7 +220,7 @@ private actor StubRemoteDatabaseHTTPTransport: RemoteDatabaseHTTPTransport {
     struct Configuration: Sendable {
         let databaseData: Data
         let getStatusCode: Int
-        let headStatusCode: Int
+        let conditionalGetStatusCode: Int?
         let headers: [String: String]
         let error: URLError?
         let delayNanoseconds: UInt64
@@ -228,7 +228,7 @@ private actor StubRemoteDatabaseHTTPTransport: RemoteDatabaseHTTPTransport {
         init(
             databaseData: Data,
             getStatusCode: Int = 200,
-            headStatusCode: Int = 200,
+            conditionalGetStatusCode: Int? = nil,
             headers: [String: String] = [
                 "ETag": "\"fixture-v1\"",
                 "Last-Modified": "Sun, 30 Aug 2026 00:00:00 GMT"
@@ -238,7 +238,7 @@ private actor StubRemoteDatabaseHTTPTransport: RemoteDatabaseHTTPTransport {
         ) {
             self.databaseData = databaseData
             self.getStatusCode = getStatusCode
-            self.headStatusCode = headStatusCode
+            self.conditionalGetStatusCode = conditionalGetStatusCode
             self.headers = headers
             self.error = error
             self.delayNanoseconds = delayNanoseconds
@@ -263,19 +263,26 @@ private actor StubRemoteDatabaseHTTPTransport: RemoteDatabaseHTTPTransport {
             throw error
         }
 
-        let isHead = request.httpMethod == "HEAD"
-        let statusCode = isHead ? configuration.headStatusCode : configuration.getStatusCode
+        let isConditional = request.value(forHTTPHeaderField: "If-None-Match") != nil
+            || request.value(forHTTPHeaderField: "If-Modified-Since") != nil
+        let statusCode = isConditional
+            ? configuration.conditionalGetStatusCode ?? 304
+            : configuration.getStatusCode
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: statusCode,
             httpVersion: "HTTP/1.1",
             headerFields: configuration.headers
         )!
-        return (isHead ? Data() : configuration.databaseData, response)
+        return (statusCode == 304 ? Data() : configuration.databaseData, response)
     }
 
     func requestedMethods() -> [String] {
         requests.map { $0.httpMethod ?? "GET" }
+    }
+
+    func requestedHeaderValues(for name: String) -> [String?] {
+        requests.map { $0.value(forHTTPHeaderField: name) }
     }
 }
 
@@ -480,7 +487,7 @@ final class RemoteDatabaseTests: XCTestCase {
         // Load to create cache with metadata
         _ = try await remote.load()
 
-        // Refresh should report already current (HEAD request only)
+        // Refresh should report already current from one conditional GET.
         let result = try await remote.refresh()
         switch result {
         case .alreadyCurrent:
@@ -489,7 +496,118 @@ final class RemoteDatabaseTests: XCTestCase {
             XCTFail("Should not download again - database hasn't changed")
         }
         let requestedMethods = await transport.requestedMethods()
-        XCTAssertEqual(requestedMethods, ["GET", "HEAD"])
+        XCTAssertEqual(requestedMethods, ["GET", "GET"])
+        let etags = await transport.requestedHeaderValues(for: "If-None-Match")
+        let modifiedDates = await transport.requestedHeaderValues(for: "If-Modified-Since")
+        XCTAssertEqual(etags, [nil, "\"fixture-v1\""])
+        XCTAssertEqual(modifiedDates, [nil, "Sun, 30 Aug 2026 00:00:00 GMT"])
+    }
+
+    func testRemoteDatabaseRefreshDetailsPersistStatus() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let (remote, transport) = try makeRemoteAndTransport(cacheDirectory: tempDir)
+        let loadedDatabase = try await remote.load()
+        let loadedStatus = await remote.status()
+        XCTAssertEqual(loadedStatus.databaseMetadata, loadedDatabase.metadata)
+        XCTAssertEqual(loadedStatus.origin, .downloaded)
+        XCTAssertNotNil(loadedStatus.lastSuccessfulCheck)
+        XCTAssertEqual(loadedStatus.lastSuccessfulCheck, loadedStatus.lastSuccessfulUpdate)
+
+        let details = try await remote.refreshDetails()
+        XCTAssertEqual(details.outcome, .notModified)
+        XCTAssertEqual(details.database.metadata, loadedDatabase.metadata)
+        XCTAssertEqual(details.status.databaseMetadata, loadedDatabase.metadata)
+        XCTAssertEqual(details.status.origin, .downloaded)
+        XCTAssertNotNil(details.status.lastSuccessfulCheck)
+        XCTAssertEqual(details.status.lastSuccessfulUpdate, loadedStatus.lastSuccessfulUpdate)
+
+        let reloadedRemote = try makeRemote(cacheDirectory: tempDir)
+        _ = try await reloadedRemote.load()
+        let reloadedStatus = await reloadedRemote.status()
+        XCTAssertEqual(reloadedStatus.origin, .diskCache)
+        XCTAssertEqual(reloadedStatus.lastSuccessfulCheck, details.status.lastSuccessfulCheck)
+        XCTAssertEqual(reloadedStatus.lastSuccessfulUpdate, details.status.lastSuccessfulUpdate)
+
+        let requestedMethods = await transport.requestedMethods()
+        XCTAssertEqual(requestedMethods, ["GET", "GET"])
+    }
+
+    func testRemoteDatabaseConditionalRefreshDownloadsChangedBody() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: try embeddedDatabaseData(),
+            conditionalGetStatusCode: 200
+        )
+        let (remote, transport) = try makeRemoteAndTransport(
+            cacheDirectory: tempDir,
+            configuration: configuration
+        )
+
+        _ = try await remote.load()
+        let details = try await remote.refreshDetails()
+        XCTAssertEqual(details.outcome, .updated)
+        XCTAssertEqual(details.database.origin, .downloaded)
+        XCTAssertEqual(details.status.origin, .downloaded)
+        XCTAssertNotNil(details.status.lastSuccessfulCheck)
+        XCTAssertEqual(details.status.lastSuccessfulCheck, details.status.lastSuccessfulUpdate)
+
+        let requestedMethods = await transport.requestedMethods()
+        XCTAssertEqual(requestedMethods, ["GET", "GET"])
+        let etags = await transport.requestedHeaderValues(for: "If-None-Match")
+        XCTAssertEqual(etags, [nil, "\"fixture-v1\""])
+    }
+
+    func testRemoteDatabaseRefreshUsesLastModifiedWithoutETag() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: try embeddedDatabaseData(),
+            headers: ["Last-Modified": "Sun, 30 Aug 2026 00:00:00 GMT"]
+        )
+        let (remote, transport) = try makeRemoteAndTransport(
+            cacheDirectory: tempDir,
+            configuration: configuration
+        )
+
+        _ = try await remote.load()
+        let details = try await remote.refreshDetails()
+        XCTAssertEqual(details.outcome, .notModified)
+        let etags = await transport.requestedHeaderValues(for: "If-None-Match")
+        let modifiedDates = await transport.requestedHeaderValues(for: "If-Modified-Since")
+        XCTAssertEqual(etags, [nil, nil])
+        XCTAssertEqual(modifiedDates, [nil, "Sun, 30 Aug 2026 00:00:00 GMT"])
+    }
+
+    func testRemoteDatabaseConditionalRefreshRepairsCorruptedDiskCache() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let initialRemote = try makeRemote(cacheDirectory: tempDir)
+        _ = try await initialRemote.load()
+
+        let cacheURL = tempDir.appendingPathComponent("ip2asn.ultra")
+        try Data("corrupted cache".utf8).write(to: cacheURL)
+
+        let (reloadedRemote, transport) = try makeRemoteAndTransport(cacheDirectory: tempDir)
+        let details = try await reloadedRemote.refreshDetails()
+
+        XCTAssertEqual(details.outcome, .updated)
+        XCTAssertEqual(details.database.origin, .downloaded)
+        XCTAssertEqual(details.status.origin, .downloaded)
+        let requestedMethods = await transport.requestedMethods()
+        let requestedETags = await transport.requestedHeaderValues(for: "If-None-Match")
+        XCTAssertEqual(requestedMethods, ["GET", "GET"])
+        XCTAssertEqual(requestedETags, ["\"fixture-v1\"", nil])
+
+        let verifiedRemote = try makeRemote(cacheDirectory: tempDir)
+        let verifiedDatabase = try await verifiedRemote.load()
+        XCTAssertEqual(verifiedDatabase.origin, .diskCache)
+        XCTAssertEqual(verifiedDatabase.metadata, details.database.metadata)
     }
 
     func testRemoteDatabaseRefreshAfterClearDownloadsAgain() async throws {
@@ -532,16 +650,20 @@ final class RemoteDatabaseTests: XCTestCase {
             return
         }
         let requestedMethods = await transport.requestedMethods()
-        XCTAssertEqual(requestedMethods, ["GET", "HEAD", "GET"])
+        XCTAssertEqual(requestedMethods, ["GET", "GET"])
+        let etags = await transport.requestedHeaderValues(for: "If-None-Match")
+        let modifiedDates = await transport.requestedHeaderValues(for: "If-Modified-Since")
+        XCTAssertEqual(etags, [nil, nil])
+        XCTAssertEqual(modifiedDates, [nil, nil])
     }
 
-    func testRemoteDatabaseRefreshRejectsUnsupportedHead() async throws {
+    func testRemoteDatabaseRefreshRejectsConditionalGetServerError() async throws {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
         let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
             databaseData: try embeddedDatabaseData(),
-            headStatusCode: 405
+            conditionalGetStatusCode: 503
         )
         let (remote, transport) = try makeRemoteAndTransport(
             cacheDirectory: tempDir,
@@ -551,36 +673,41 @@ final class RemoteDatabaseTests: XCTestCase {
         _ = try await remote.load()
         do {
             _ = try await remote.refresh()
-            XCTFail("An unsupported HEAD response should fail refresh")
+            XCTFail("A failed conditional GET should fail refresh")
         } catch EmbeddedDatabase.Error.downloadFailed(let message) {
-            XCTAssertTrue(message.contains("HTTP 405"))
+            XCTAssertTrue(message.contains("HTTP 503"))
         }
         let requestedMethods = await transport.requestedMethods()
-        XCTAssertEqual(requestedMethods, ["GET", "HEAD"])
+        XCTAssertEqual(requestedMethods, ["GET", "GET"])
     }
 
     func testRemoteDatabaseRefreshRejectsUnsolicitedNotModified() async throws {
+        guard let bundledPath = Bundle.module.url(forResource: "ip2asn", withExtension: "ultra")?.path
+        else {
+            throw XCTSkip("No embedded database fixture")
+        }
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
 
         let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
             databaseData: try embeddedDatabaseData(),
-            headStatusCode: 304
+            getStatusCode: 304
         )
         let (remote, transport) = try makeRemoteAndTransport(
             cacheDirectory: tempDir,
+            bundledDatabasePath: bundledPath,
             configuration: configuration
         )
 
         _ = try await remote.load()
         do {
             _ = try await remote.refresh()
-            XCTFail("A non-conditional HEAD request should not receive HTTP 304")
+            XCTFail("An unconditional GET must not accept HTTP 304")
         } catch EmbeddedDatabase.Error.downloadFailed(let message) {
             XCTAssertTrue(message.contains("HTTP 304"))
         }
         let requestedMethods = await transport.requestedMethods()
-        XCTAssertEqual(requestedMethods, ["GET", "HEAD"])
+        XCTAssertEqual(requestedMethods, ["GET"])
     }
 
     func testRemoteDatabaseMapsTransportErrorsToDownloadFailure() async throws {
@@ -894,7 +1021,32 @@ final class RemoteDatabaseTests: XCTestCase {
 
         let requestedMethods = await transport.requestedMethods()
         XCTAssertEqual(requestedMethods.filter { $0 == "GET" }.count, 1)
-        XCTAssertEqual(requestedMethods.filter { $0 == "HEAD" }.count, 1)
+        XCTAssertEqual(requestedMethods.filter { $0 == "HEAD" }.count, 0)
+    }
+
+    func testRemoteDatabaseConcurrentRefreshesShareConditionalRequest() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: try embeddedDatabaseData(),
+            delayNanoseconds: 50_000_000
+        )
+        let (remote, transport) = try makeRemoteAndTransport(
+            cacheDirectory: tempDir,
+            configuration: configuration
+        )
+        _ = try await remote.load()
+
+        async let first = remote.refreshDetails()
+        async let second = remote.refreshDetails()
+        async let third = remote.refreshDetails()
+        let results = try await (first, second, third)
+        let outcomes = [results.0.outcome, results.1.outcome, results.2.outcome]
+        XCTAssertEqual(outcomes, [.notModified, .notModified, .notModified])
+
+        let requestedMethods = await transport.requestedMethods()
+        XCTAssertEqual(requestedMethods, ["GET", "GET"])
     }
 
     func testRemoteDatabaseConcurrentLookups() async throws {

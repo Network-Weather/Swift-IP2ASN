@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Structured public ULT2 validation diagnostics identifying the failing section, entry, field, reason, and relevant encoded value.
 - Public database metadata with stable SHA-256 build identifiers, range counts, optional generation/source provenance, and runtime origin.
 - A backward-compatible flagged ULT2 metadata trailer and reproducible builder metadata settings.
+- Detailed remote refresh/status APIs exposing database identity, runtime origin, and persisted successful check/update timestamps.
 
 ### Changed
 - Corrected README, DocC, contributor, and source documentation to match the current API, database size, documentation URL, and Swift 6.1 toolchain requirement.
@@ -25,6 +26,7 @@ All notable changes to this project will be documented in this file.
 - Pinned CI to Xcode 16.4 so builds and tests continuously verify the documented Swift 6.1 minimum toolchain.
 - Retained `UltraCompactError.corruptedData` only as a deprecated source-compatibility case; parser validation now reports `validationFailed(_:)`.
 - The database update workflow now records its UTC generation time and `iptoasn.com` source identifier in generated artifacts.
+- Replaced the `HEAD`-then-`GET` refresh flow with one conditional `GET`; servers without validators receive an unconditional download on each refresh.
 
 ## [0.4.1] - 2026-07-14
 

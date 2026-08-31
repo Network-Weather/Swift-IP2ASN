@@ -140,13 +140,13 @@ but it must be documented as routing-data attribution, not IP geolocation.
 
 ### Refresh protocol
 
-- [ ] Replace the mandatory `HEAD`-then-`GET` flow with conditional requests
+- [x] Replace the mandatory `HEAD`-then-`GET` flow with conditional requests
       (`If-None-Match` and `If-Modified-Since`) or document why a two-request
       flow remains necessary.
-- [ ] Return useful refresh state, including the database metadata and whether
+- [x] Return useful refresh state, including the database metadata and whether
       the active database came from a bundle, cache, or download.
-- [ ] Define behavior for servers without ETags or Last-Modified headers.
-- [ ] Expose last successful check/update information without adding automatic
+- [x] Define behavior for servers without ETags or Last-Modified headers.
+- [x] Expose last successful check/update information without adding automatic
       background scheduling to the library.
 
 ### Artifact provenance

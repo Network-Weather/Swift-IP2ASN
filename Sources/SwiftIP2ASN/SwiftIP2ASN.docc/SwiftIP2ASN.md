@@ -46,13 +46,18 @@ let remote = RemoteDatabase()
 // First call downloads, subsequent calls use cache
 let db = try await remote.load()
 
-// Check for updates (HEAD request, ~200 bytes)
+// One conditional GET; a current cache receives no response body
 switch try await remote.refresh() {
 case .alreadyCurrent:
     print("Database is current")
 case .updated(let newDb):
     print("Updated to \(newDb.entryCount) entries")
 }
+
+let details = try await remote.refreshDetails()
+print(details.outcome)
+print(details.status.databaseMetadata?.buildIdentifier as Any)
+print(details.status.lastSuccessfulCheck as Any)
 ```
 
 ### Offline-First Apps
@@ -115,7 +120,7 @@ remain available.
 | Lookup (binary search) | ~1 microsecond |
 | Load from disk | ~150 ms |
 | Download from CDN | ~2-3 seconds |
-| Refresh check (HEAD) | ~100 ms |
+| Unchanged refresh (conditional GET) | ~100 ms, no response body |
 
 ## Data Sources
 

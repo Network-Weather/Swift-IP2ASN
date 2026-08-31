@@ -62,13 +62,19 @@ if let result = db.lookup("8.8.8.8") {
     print("AS\(result.asn): \(result.name ?? "Unknown")")
 }
 
-// Check for updates (HEAD request first, ~200 bytes)
+// One conditional GET; a current cache receives 304 with no response body
 switch try await IP2ASN.refresh() {
 case .alreadyCurrent:
     print("Database is up to date")
 case .updated(let newDb):
     print("Updated to \(newDb.entryCount) entries")
 }
+
+// Detailed identity, origin, and persisted check/update timestamps
+let details = try await IP2ASN.refreshDetails()
+print(details.outcome)
+print(details.status.databaseMetadata?.buildIdentifier as Any)
+print(details.status.lastSuccessfulCheck as Any)
 ```
 
 ### Offline-First Apps
@@ -107,9 +113,10 @@ were not encoded, but still receive a deterministic build identifier.
 
 The static `IP2ASN` API maintains one active remote configuration. The most
 recent `remote(bundledPath:)` call selects the configuration used by `refresh()`,
-`isCached()`, and `clearCache()`; calling `remote()` with no path selects the
-default configuration again. Use separate `RemoteDatabase` instances with
-distinct cache directories when you need multiple independent configurations.
+`refreshDetails()`, `status()`, `isCached()`, and `clearCache()`; calling
+`remote()` with no path selects the default configuration again. Use separate
+`RemoteDatabase` instances with distinct cache directories when you need
+multiple independent configurations.
 
 ### Advanced: Direct RemoteDatabase Usage
 
@@ -237,7 +244,7 @@ if range.contains(ip) {
 | Lookup (binary search) | ~1 microsecond |
 | Load from disk | ~150 ms |
 | Download from CDN | ~2-3 seconds |
-| Refresh check (HEAD) | ~100 ms |
+| Unchanged refresh (conditional GET) | ~100 ms, no response body |
 
 The library uses a binary search on sorted contiguous arrays, providing excellent cache locality and O(log n) lookup performance.
 

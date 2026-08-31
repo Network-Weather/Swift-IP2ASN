@@ -115,7 +115,7 @@ public enum EmbeddedDatabase {
 /// ## Checking for Updates
 ///
 /// ```swift
-/// // Issues HEAD request first (~200 bytes), only downloads if changed
+/// // Sends one conditional GET; a current cache receives no response body
 /// switch try await remote.refresh() {
 /// case .alreadyCurrent:
 ///     print("Database is up to date")
@@ -158,7 +158,11 @@ public enum EmbeddedDatabase {
 ///
 /// - ``load()``
 /// - ``refresh()``
+/// - ``refreshDetails()``
+/// - ``status()``
 /// - ``RefreshResult``
+/// - ``RefreshDetails``
+/// - ``Status``
 ///
 /// ### Cache Management
 ///
@@ -181,6 +185,7 @@ public actor RemoteDatabase {
     private let httpTransport: any RemoteDatabaseHTTPTransport
     private var cachedDatabase: UltraCompactDatabase?
     private var fetchTask: Task<UltraCompactDatabase, Swift.Error>?
+    private var refreshTask: Task<RefreshDetails, Swift.Error>?
 
     /// Creates a new RemoteDatabase instance.
     ///
@@ -312,13 +317,41 @@ public actor RemoteDatabase {
         case updated(UltraCompactDatabase)
     }
 
+    /// Current database identity and persisted remote-update timestamps.
+    public struct Status: Equatable, Sendable {
+        /// Metadata for the active in-memory database, if one has been loaded.
+        public let databaseMetadata: DatabaseMetadata?
+
+        /// Runtime origin of the active database, if one has been loaded.
+        public let origin: DatabaseOrigin?
+
+        /// Most recent successful remote response, including `304` responses.
+        public let lastSuccessfulCheck: Date?
+
+        /// Most recent successful database download and cache replacement.
+        public let lastSuccessfulUpdate: Date?
+    }
+
+    /// Detailed result of a conditional refresh operation.
+    public struct RefreshDetails: Sendable {
+        public enum Outcome: String, Equatable, Sendable {
+            /// The server returned `304 Not Modified` and the cache was retained.
+            case notModified
+
+            /// A response body was validated and installed as the active cache.
+            case updated
+        }
+
+        public let outcome: Outcome
+        public let database: UltraCompactDatabase
+        public let status: Status
+    }
+
     /// Checks for database updates and downloads only if the remote has changed.
     ///
-    /// This method uses HTTP ETag and Last-Modified headers to efficiently check
-    /// for updates. The typical flow is:
-    /// 1. Send HEAD request (~200 bytes)
-    /// 2. Compare ETag/Last-Modified with stored metadata
-    /// 3. Download only if changed (~4 MB)
+    /// This method sends one conditional `GET` using the cached ETag and/or
+    /// Last-Modified value. A `304 Not Modified` response retains the cache; a
+    /// successful response body is validated and installed atomically.
     ///
     /// If using a bundled database (no previous download metadata), this will
     /// always download since the bundled version cannot be compared.
@@ -342,41 +375,45 @@ public actor RemoteDatabase {
     /// ```
     @discardableResult
     public func refresh() async throws -> RefreshResult {
-        // Load stored metadata (ETag/Last-Modified from previous download)
-        let storedMeta = loadMetadata()
+        let details = try await refreshDetails()
+        switch details.outcome {
+        case .notModified:
+            return .alreadyCurrent
+        case .updated:
+            return .updated(details.database)
+        }
+    }
 
-        // Issue HEAD request to check if remote has changed
-        var request = URLRequest(url: remoteURL)
-        request.httpMethod = "HEAD"
-
-        let (_, response) = try await performRequest(request, operation: "HEAD request")
-
-        guard let httpResponse = response as? HTTPURLResponse,
-            (200...299).contains(httpResponse.statusCode)
-        else {
-            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            throw EmbeddedDatabase.Error.downloadFailed("HEAD request failed: HTTP \(status)")
+    /// Performs a conditional refresh and returns database identity, origin,
+    /// and successful check/update timestamps with the outcome.
+    ///
+    /// Servers without ETag or Last-Modified support receive an unconditional
+    /// `GET`, so refresh remains correct but downloads the body each time.
+    @discardableResult
+    public func refreshDetails() async throws -> RefreshDetails {
+        if let refreshTask {
+            return try await refreshTask.value
         }
 
-        let remoteETag = httpResponse.value(forHTTPHeaderField: "ETag")
-        let remoteLastModified = httpResponse.value(forHTTPHeaderField: "Last-Modified")
-
-        // Check if we already have this version (only if we have metadata from a previous download and the cached file exists)
-        if isCached(), let storedETag = storedMeta?.etag, let remoteETag = remoteETag {
-            if storedETag == remoteETag {
-                return .alreadyCurrent
-            }
-        } else if isCached(), let storedLastModified = storedMeta?.lastModified,
-            let remoteLastModified = remoteLastModified
-        {
-            if storedLastModified == remoteLastModified {
-                return .alreadyCurrent
-            }
+        let task = Task { try await performRefresh() }
+        refreshTask = task
+        do {
+            let result = try await task.value
+            refreshTask = nil
+            return result
+        } catch {
+            refreshTask = nil
+            throw error
         }
+    }
 
-        // No metadata (using bundled DB) or remote is newer - download it
-        let db = try await fetchAndCacheOnce()
-        return .updated(db)
+    /// Returns active database identity and persisted update timestamps.
+    ///
+    /// Database metadata and origin are `nil` until ``load()`` or a refresh has
+    /// installed an in-memory database. Successful check/update timestamps are
+    /// restored from the disk-cache sidecar when available.
+    public func status() -> Status {
+        makeStatus(cacheMetadata: isCached() ? loadMetadata() : nil)
     }
 
     /// Returns whether a downloaded database cache exists on disk.
@@ -397,6 +434,8 @@ public actor RemoteDatabase {
     ///
     /// - Throws: If file deletion fails.
     public func clearCache() throws {
+        refreshTask?.cancel()
+        refreshTask = nil
         fetchTask?.cancel()
         fetchTask = nil
         cachedDatabase = nil
@@ -420,6 +459,8 @@ public actor RemoteDatabase {
     private struct CacheMetadata: Codable {
         let etag: String?
         let lastModified: String?
+        let lastSuccessfulCheck: Date?
+        let lastSuccessfulUpdate: Date?
     }
 
     private func loadMetadata() -> CacheMetadata? {
@@ -431,11 +472,112 @@ public actor RemoteDatabase {
         return meta
     }
 
-    private func saveMetadata(etag: String?, lastModified: String?) {
-        let meta = CacheMetadata(etag: etag, lastModified: lastModified)
+    private func saveMetadata(_ metadata: CacheMetadata) {
+        let meta = metadata
         if let data = try? JSONEncoder().encode(meta) {
             try? data.write(to: metadataURL, options: .atomic)
         }
+    }
+
+    private func makeStatus(cacheMetadata: CacheMetadata?) -> Status {
+        Status(
+            databaseMetadata: cachedDatabase?.metadata,
+            origin: cachedDatabase?.origin,
+            lastSuccessfulCheck: cacheMetadata?.lastSuccessfulCheck,
+            lastSuccessfulUpdate: cacheMetadata?.lastSuccessfulUpdate
+        )
+    }
+
+    private func performRefresh() async throws -> RefreshDetails {
+        if let fetchTask {
+            let database = try await fetchTask.value
+            return RefreshDetails(
+                outcome: .updated,
+                database: database,
+                status: makeStatus(cacheMetadata: loadMetadata())
+            )
+        }
+
+        guard isCached() else {
+            let database = try await fetchAndCacheOnce()
+            return RefreshDetails(
+                outcome: .updated,
+                database: database,
+                status: makeStatus(cacheMetadata: loadMetadata())
+            )
+        }
+
+        let storedMetadata = loadMetadata()
+        var request = URLRequest(url: remoteURL)
+        request.httpMethod = "GET"
+        if let etag = storedMetadata?.etag {
+            request.setValue(etag, forHTTPHeaderField: "If-None-Match")
+        }
+        if let lastModified = storedMetadata?.lastModified {
+            request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")
+        }
+        let isConditional =
+            request.value(forHTTPHeaderField: "If-None-Match") != nil
+            || request.value(forHTTPHeaderField: "If-Modified-Since") != nil
+
+        let (data, response) = try await performRequest(request, operation: "Refresh")
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw EmbeddedDatabase.Error.downloadFailed("Refresh failed: non-HTTP response")
+        }
+
+        let checkedAt = Date()
+        if httpResponse.statusCode == 304 {
+            guard isConditional, isCached() else {
+                throw EmbeddedDatabase.Error.downloadFailed(
+                    "Refresh failed: unsolicited HTTP 304"
+                )
+            }
+
+            let database: UltraCompactDatabase
+            if let cachedDatabase {
+                database = cachedDatabase
+            } else {
+                do {
+                    database = try UltraCompactDatabase(path: cacheURL.path, origin: .diskCache)
+                    cachedDatabase = database
+                } catch {
+                    // The validator describes an unusable local file. Remove both
+                    // parts of the cache and recover with an unconditional download.
+                    try? FileManager.default.removeItem(at: cacheURL)
+                    try? FileManager.default.removeItem(at: metadataURL)
+                    let recoveredDatabase = try await fetchAndCacheOnce()
+                    return RefreshDetails(
+                        outcome: .updated,
+                        database: recoveredDatabase,
+                        status: makeStatus(cacheMetadata: loadMetadata())
+                    )
+                }
+            }
+
+            let metadata = CacheMetadata(
+                etag: httpResponse.value(forHTTPHeaderField: "ETag") ?? storedMetadata?.etag,
+                lastModified: httpResponse.value(forHTTPHeaderField: "Last-Modified")
+                    ?? storedMetadata?.lastModified,
+                lastSuccessfulCheck: checkedAt,
+                lastSuccessfulUpdate: storedMetadata?.lastSuccessfulUpdate
+            )
+            saveMetadata(metadata)
+            return RefreshDetails(
+                outcome: .notModified,
+                database: database,
+                status: makeStatus(cacheMetadata: metadata)
+            )
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw EmbeddedDatabase.Error.downloadFailed("Refresh failed: HTTP \(httpResponse.statusCode)")
+        }
+        let database = try cacheDownloadedDatabase(data, response: httpResponse, checkedAt: checkedAt)
+        return RefreshDetails(
+            outcome: .updated,
+            database: database,
+            status: makeStatus(cacheMetadata: loadMetadata())
+        )
     }
 
     private func performRequest(
@@ -492,16 +634,32 @@ public actor RemoteDatabase {
             throw EmbeddedDatabase.Error.invalidResponse
         }
 
-        // Validate and parse the database first before writing to disk
+        return try cacheDownloadedDatabase(data, response: httpResponse, checkedAt: Date())
+    }
+
+    private func cacheDownloadedDatabase(
+        _ data: Data,
+        response: HTTPURLResponse,
+        checkedAt: Date
+    ) throws -> UltraCompactDatabase {
+        guard !data.isEmpty else {
+            throw EmbeddedDatabase.Error.invalidResponse
+        }
+
+        // Validate and parse the database first before writing to disk.
         let db = try UltraCompactDatabase(data: data, origin: .downloaded)
 
         // Write to disk cache (atomic to prevent corruption)
         try data.write(to: cacheURL, options: .atomic)
 
-        // Save ETag/Last-Modified for future refresh checks
-        let etag = httpResponse.value(forHTTPHeaderField: "ETag")
-        let lastModified = httpResponse.value(forHTTPHeaderField: "Last-Modified")
-        saveMetadata(etag: etag, lastModified: lastModified)
+        saveMetadata(
+            CacheMetadata(
+                etag: response.value(forHTTPHeaderField: "ETag"),
+                lastModified: response.value(forHTTPHeaderField: "Last-Modified"),
+                lastSuccessfulCheck: checkedAt,
+                lastSuccessfulUpdate: checkedAt
+            )
+        )
 
         // Cache in memory
         cachedDatabase = db
