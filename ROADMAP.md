@@ -74,14 +74,14 @@ adding new public behavior.
 
 ### Simple API state semantics
 
-- [ ] Define whether repeated `IP2ASN.remote(bundledPath:)` calls may select
+- [x] Define whether repeated `IP2ASN.remote(bundledPath:)` calls may select
       different bundles. The current first-path-wins behavior must not remain
       implicit.
-- [ ] Make `refresh()`, `isCached()`, and `clearCache()` operate on a clearly
+- [x] Make `refresh()`, `isCached()`, and `clearCache()` operate on a clearly
       identified remote-database configuration.
-- [ ] Cover transitions between the default, bundled, cached, cleared, and
+- [x] Cover transitions between the default, bundled, cached, cleared, and
       refreshed states with tests.
-- [ ] Keep direct `RemoteDatabase` construction as the explicit API for callers
+- [x] Keep direct `RemoteDatabase` construction as the explicit API for callers
       needing multiple independent configurations.
 
 ### Deterministic remote-update tests

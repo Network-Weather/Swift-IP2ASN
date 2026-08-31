@@ -125,6 +125,34 @@ final class EmbeddedDatabaseTests: XCTestCase {
 
 final class IP2ASNSimpleAPITests: XCTestCase {
 
+    func testSharedStateReusesOnlyTheSelectedConfiguration() async {
+        let state = IP2ASNSharedState()
+
+        let defaultDatabase = await state.database(bundledPath: nil)
+        let repeatedDefaultDatabase = await state.database(bundledPath: nil)
+        let activeDefaultDatabase = await state.databaseForActiveConfiguration()
+        XCTAssertTrue(defaultDatabase === repeatedDefaultDatabase)
+        XCTAssertTrue(defaultDatabase === activeDefaultDatabase)
+
+        let firstBundledDatabase = await state.database(bundledPath: "/tmp/first.ultra")
+        let repeatedFirstBundledDatabase = await state.database(bundledPath: "/tmp/first.ultra")
+        let activeFirstBundledDatabase = await state.databaseForActiveConfiguration()
+        XCTAssertFalse(defaultDatabase === firstBundledDatabase)
+        XCTAssertTrue(firstBundledDatabase === repeatedFirstBundledDatabase)
+        XCTAssertTrue(firstBundledDatabase === activeFirstBundledDatabase)
+
+        let secondBundledDatabase = await state.database(bundledPath: "/tmp/second.ultra")
+        let activeSecondBundledDatabase = await state.databaseForActiveConfiguration()
+        XCTAssertFalse(firstBundledDatabase === secondBundledDatabase)
+        XCTAssertTrue(secondBundledDatabase === activeSecondBundledDatabase)
+
+        let reselectedDefaultDatabase = await state.database(bundledPath: nil)
+        let activeReselectedDefaultDatabase = await state.databaseForActiveConfiguration()
+        XCTAssertFalse(secondBundledDatabase === reselectedDefaultDatabase)
+        XCTAssertFalse(defaultDatabase === reselectedDefaultDatabase)
+        XCTAssertTrue(reselectedDefaultDatabase === activeReselectedDefaultDatabase)
+    }
+
     func testIP2ASNEmbedded() throws {
         // Test the simple embedded() API
         let db = try IP2ASN.embedded()

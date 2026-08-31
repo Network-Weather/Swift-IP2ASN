@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Corrected README, DocC, contributor, and source documentation to match the current API, database size, documentation URL, and Swift 6.1 toolchain requirement.
 - Documented the compatibility status of `ASNInfo` and the legacy compressed database format.
+- Defined the `IP2ASN` convenience API as a single active remote configuration; changing or clearing `bundledPath` now replaces the prior in-memory `RemoteDatabase` instead of retaining the first custom path indefinitely.
 
 ## [0.4.1] - 2026-07-14
 

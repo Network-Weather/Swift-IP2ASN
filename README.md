@@ -87,6 +87,12 @@ let db = try await IP2ASN.remote(
 Task { try? await IP2ASN.refresh() }
 ```
 
+The static `IP2ASN` API maintains one active remote configuration. The most
+recent `remote(bundledPath:)` call selects the configuration used by `refresh()`,
+`isCached()`, and `clearCache()`; calling `remote()` with no path selects the
+default configuration again. Use separate `RemoteDatabase` instances with
+distinct cache directories when you need multiple independent configurations.
+
 ### Advanced: Direct RemoteDatabase Usage
 
 For more control over caching and state:

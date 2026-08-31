@@ -1,5 +1,27 @@
 import Foundation
 
+// MARK: - Shared convenience API state
+
+/// Maintains the single active configuration used by the `IP2ASN` convenience
+/// API. Kept internal so configuration transitions can be tested without
+/// touching the process-wide singleton or performing network requests.
+actor IP2ASNSharedState {
+    private var activeBundledPath: String?
+    private var activeDatabase = RemoteDatabase()
+
+    func database(bundledPath: String?) -> RemoteDatabase {
+        if bundledPath != activeBundledPath {
+            activeBundledPath = bundledPath
+            activeDatabase = RemoteDatabase(bundledDatabasePath: bundledPath)
+        }
+        return activeDatabase
+    }
+
+    func databaseForActiveConfiguration() -> RemoteDatabase {
+        activeDatabase
+    }
+}
+
 // MARK: - IP2ASN
 
 /// Simple, top-level API for IP-to-ASN lookups.
@@ -30,35 +52,18 @@ import Foundation
 /// ```swift
 /// let db = try await IP2ASN.remote(bundledPath: Bundle.main.path(forResource: "ip2asn", ofType: "ultra"))
 /// ```
+///
+/// `IP2ASN` is a convenience singleton with one active remote configuration.
+/// Each call to ``remote(bundledPath:)`` selects the configuration subsequently
+/// used by ``refresh()``, ``isCached()``, and ``clearCache()``. Calling
+/// `remote()` without a path selects the default configuration again. Create
+/// separate ``RemoteDatabase`` actors with distinct cache directories when an
+/// application needs multiple independent configurations.
 public enum IP2ASN {
 
     // MARK: - Shared State
 
-    /// Actor to manage shared RemoteDatabase instances safely.
-    private actor SharedState {
-        var defaultDB = RemoteDatabase()
-        var customDB: RemoteDatabase?
-
-        func getDB(bundledPath: String?) -> RemoteDatabase {
-            if let bundledPath = bundledPath {
-                if customDB == nil {
-                    customDB = RemoteDatabase(bundledDatabasePath: bundledPath)
-                }
-                return customDB!
-            }
-            return defaultDB
-        }
-
-        func getActiveDB() -> RemoteDatabase {
-            customDB ?? defaultDB
-        }
-
-        func clearCustomDB() {
-            customDB = nil
-        }
-    }
-
-    private static let shared = SharedState()
+    private static let shared = IP2ASNSharedState()
 
     // MARK: - Embedded Database (Synchronous)
 
@@ -88,7 +93,10 @@ public enum IP2ASN {
     /// persistent disk cache. The database is cached in Application Support.
     ///
     /// - Parameter bundledPath: Optional path to a bundled database for offline-first operation.
-    ///   When provided, works immediately even without network.
+    ///   When provided, works immediately even without network. This call also
+    ///   selects the active configuration used by the static cache-management
+    ///   methods. Passing a different path replaces the previous in-memory
+    ///   `RemoteDatabase`; passing `nil` selects the default configuration.
     /// - Returns: An `UltraCompactDatabase` ready for lookups.
     ///
     /// ```swift
@@ -99,7 +107,7 @@ public enum IP2ASN {
     /// let db = try await IP2ASN.remote(bundledPath: Bundle.main.path(forResource: "ip2asn", ofType: "ultra"))
     /// ```
     public static func remote(bundledPath: String? = nil) async throws -> UltraCompactDatabase {
-        let db = await shared.getDB(bundledPath: bundledPath)
+        let db = await shared.database(bundledPath: bundledPath)
         return try await db.load()
     }
 
@@ -120,7 +128,7 @@ public enum IP2ASN {
     /// ```
     @discardableResult
     public static func refresh() async throws -> RemoteDatabase.RefreshResult {
-        let db = await shared.getActiveDB()
+        let db = await shared.databaseForActiveConfiguration()
         return try await db.refresh()
     }
 
@@ -128,7 +136,7 @@ public enum IP2ASN {
     ///
     /// - Returns: `true` if a cached database exists on disk.
     public static func isCached() async -> Bool {
-        let db = await shared.getActiveDB()
+        let db = await shared.databaseForActiveConfiguration()
         return await db.isCached()
     }
 
@@ -137,7 +145,7 @@ public enum IP2ASN {
     /// After calling this, the next `remote()` call will either use the bundled
     /// database (if provided) or download fresh from CDN.
     public static func clearCache() async throws {
-        let db = await shared.getActiveDB()
+        let db = await shared.databaseForActiveConfiguration()
         try await db.clearCache()
     }
 }
