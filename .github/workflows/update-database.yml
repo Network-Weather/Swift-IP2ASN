@@ -4,7 +4,13 @@ on:
   schedule:
     # Every Monday at 06:00 UTC
     - cron: '0 6 * * 1'
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      allow_large_change:
+        description: Allow database size or range counts to change by more than 20%
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -22,30 +28,85 @@ jobs:
 
       - name: Download latest TSVs (v4 + v6)
         run: |
-          curl -sL https://iptoasn.com/data/ip2asn-v4.tsv.gz | gunzip > /tmp/ip2asn-v4.tsv
-          curl -sL https://iptoasn.com/data/ip2asn-v6.tsv.gz | gunzip > /tmp/ip2asn-v6.tsv
+          curl --fail --silent --show-error --location \
+            https://iptoasn.com/data/ip2asn-v4.tsv.gz \
+            --output /tmp/ip2asn-v4.tsv.gz
+          curl --fail --silent --show-error --location \
+            https://iptoasn.com/data/ip2asn-v6.tsv.gz \
+            --output /tmp/ip2asn-v6.tsv.gz
+          gzip -dc /tmp/ip2asn-v4.tsv.gz > /tmp/ip2asn-v4.tsv
+          gzip -dc /tmp/ip2asn-v6.tsv.gz > /tmp/ip2asn-v6.tsv
 
-      - name: Build ultra-compact dual-stack database
+      - name: Build database and provenance manifest
         run: |
           generated_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           .build/release/ip2asn-tools build-ultra \
             --source iptoasn.com \
             --generated-at "$generated_at" \
+            --manifest Sources/SwiftIP2ASN/Resources/ip2asn.manifest.json \
+            --builder-version "$GITHUB_SHA" \
+            --input-source https://iptoasn.com/data/ip2asn-v4.tsv.gz /tmp/ip2asn-v4.tsv.gz \
+            --input-source https://iptoasn.com/data/ip2asn-v6.tsv.gz /tmp/ip2asn-v6.tsv.gz \
             /tmp/ip2asn-v4.tsv \
             /tmp/ip2asn-v6.tsv \
             Sources/SwiftIP2ASN/Resources/ip2asn.ultra
 
+      - name: Check artifact sanity thresholds
+        env:
+          ALLOW_LARGE_CHANGE: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_large_change }}
+        run: |
+          if [[ "$ALLOW_LARGE_CHANGE" == "true" ]]; then
+            echo "Large-change sanity thresholds explicitly overridden."
+            exit 0
+          fi
+
+          old_size=$(git show HEAD:Sources/SwiftIP2ASN/Resources/ip2asn.ultra | wc -c | tr -d ' ')
+          new_size=$(wc -c < Sources/SwiftIP2ASN/Resources/ip2asn.ultra | tr -d ' ')
+
+          check_change() {
+            local label="$1"
+            local old_value="$2"
+            local new_value="$3"
+            local minimum=$((old_value * 80 / 100))
+            local maximum=$((old_value * 120 / 100))
+            if ((new_value < minimum || new_value > maximum)); then
+              echo "::error::$label changed from $old_value to $new_value (more than 20%)."
+              echo "Rerun manually with allow_large_change=true after reviewing the source update."
+              exit 1
+            fi
+          }
+
+          check_change "Database size" "$old_size" "$new_size"
+
+          manifest=Sources/SwiftIP2ASN/Resources/ip2asn.manifest.json
+          if git cat-file -e HEAD:"$manifest" 2>/dev/null; then
+            old_ipv4=$(git show HEAD:"$manifest" | jq '.output.ipv4RangeCount')
+            old_ipv6=$(git show HEAD:"$manifest" | jq '.output.ipv6RangeCount')
+            new_ipv4=$(jq '.output.ipv4RangeCount' "$manifest")
+            new_ipv6=$(jq '.output.ipv6RangeCount' "$manifest")
+            check_change "IPv4 range count" "$old_ipv4" "$new_ipv4"
+            check_change "IPv6 range count" "$old_ipv6" "$new_ipv6"
+          else
+            echo "No previous manifest; range-count thresholds begin after this baseline."
+          fi
+
       - name: Check for changes
         id: diff
         run: |
-          if git diff --quiet Sources/SwiftIP2ASN/Resources/ip2asn.ultra; then
+          database=Sources/SwiftIP2ASN/Resources/ip2asn.ultra
+          manifest=Sources/SwiftIP2ASN/Resources/ip2asn.manifest.json
+          if [[ -z "$(git status --porcelain -- "$database" "$manifest")" ]]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            OLD_SIZE=$(git show HEAD:Sources/SwiftIP2ASN/Resources/ip2asn.ultra | wc -c | tr -d ' ')
-            NEW_SIZE=$(wc -c < Sources/SwiftIP2ASN/Resources/ip2asn.ultra | tr -d ' ')
+            OLD_SIZE=$(git show HEAD:"$database" | wc -c | tr -d ' ')
+            NEW_SIZE=$(wc -c < "$database" | tr -d ' ')
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "old_size=$OLD_SIZE" >> "$GITHUB_OUTPUT"
             echo "new_size=$NEW_SIZE" >> "$GITHUB_OUTPUT"
+            echo "output_sha=$(jq -r '.output.artifact.sha256' "$manifest")" >> "$GITHUB_OUTPUT"
+            echo "build_id=$(jq -r '.output.buildIdentifier' "$manifest")" >> "$GITHUB_OUTPUT"
+            echo "ipv4_count=$(jq -r '.output.ipv4RangeCount' "$manifest")" >> "$GITHUB_OUTPUT"
+            echo "ipv6_count=$(jq -r '.output.ipv6RangeCount' "$manifest")" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run tests
@@ -68,6 +129,12 @@ jobs:
             - Sources: `ip2asn-v4.tsv.gz` + `ip2asn-v6.tsv.gz`
             - Previous size: ${{ steps.diff.outputs.old_size }} bytes
             - New size: ${{ steps.diff.outputs.new_size }} bytes
+            - IPv4 ranges: ${{ steps.diff.outputs.ipv4_count }}
+            - IPv6 ranges: ${{ steps.diff.outputs.ipv6_count }}
+            - Build identifier: `${{ steps.diff.outputs.build_id }}`
+            - Output SHA-256: `${{ steps.diff.outputs.output_sha }}`
 
-            Full `swift test` suite passes with the new database.
+            The machine-readable manifest records source URLs, downloaded and
+            decompressed input digests, builder revision, output digest, counts,
+            and generation time. Full `swift test` passes with the new database.
           delete-branch: true

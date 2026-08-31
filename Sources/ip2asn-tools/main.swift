@@ -20,7 +20,10 @@ func usage() -> Never {
           lookup-compressed <db.cdb> <ip>
           bench-compressed <db.cdb> [iterations]
 
-          build-ultra [--source <id> --generated-at <ISO-8601>] <v4.tsv> [v6.tsv] <output.ultra>
+          build-ultra [provenance options] <v4.tsv> [v6.tsv] <output.ultra>
+            --source <id> --generated-at <ISO-8601>
+            --manifest <output.json> --builder-version <version>
+            --input-source <url> <downloaded-file>  (repeat in input order)
           lookup-ultra <db.ultra> <ip>
           bench-ultra <db.ultra> [iterations]
         """
@@ -81,6 +84,9 @@ case .buildUltra:
     var positional: [String] = []
     var sourceIdentifier: String?
     var generationTimestamp: Date?
+    var manifestPath: String?
+    var builderVersion: String?
+    var manifestSources: [(url: URL, downloadedPath: String)] = []
     var buildArguments = Array(args)
     buildArguments.removeFirst()
     var argumentIndex = 0
@@ -96,6 +102,22 @@ case .buildUltra:
             guard argumentIndex < buildArguments.count else { usage() }
             generationTimestamp = ISO8601DateFormatter().date(from: buildArguments[argumentIndex])
             guard generationTimestamp != nil else { usage() }
+        case "--manifest":
+            argumentIndex += 1
+            guard argumentIndex < buildArguments.count else { usage() }
+            manifestPath = buildArguments[argumentIndex]
+        case "--builder-version":
+            argumentIndex += 1
+            guard argumentIndex < buildArguments.count else { usage() }
+            builderVersion = buildArguments[argumentIndex]
+        case "--input-source":
+            argumentIndex += 1
+            guard argumentIndex < buildArguments.count,
+                let url = URL(string: buildArguments[argumentIndex])
+            else { usage() }
+            argumentIndex += 1
+            guard argumentIndex < buildArguments.count else { usage() }
+            manifestSources.append((url, buildArguments[argumentIndex]))
         default:
             guard !argument.hasPrefix("--") else { usage() }
             positional.append(argument)
@@ -131,6 +153,37 @@ case .buildUltra:
     default:
         usage()
     }
+
+    let inputPaths = [v4Path, v6Path].compactMap { $0 }
+    let requestsManifest = manifestPath != nil || builderVersion != nil || !manifestSources.isEmpty
+    let manifestRequest:
+        (
+            path: String,
+            builderVersion: String,
+            sourceInputs: [DatabaseBuildManifest.SourceInput]
+        )?
+    if requestsManifest {
+        guard let manifestPath,
+            let builderVersion,
+            generationTimestamp != nil,
+            manifestSources.count == inputPaths.count
+        else { usage() }
+
+        manifestRequest = (
+            manifestPath,
+            builderVersion,
+            zip(manifestSources, inputPaths).map { source, inputPath in
+                DatabaseBuildManifest.SourceInput(
+                    url: source.url,
+                    downloadedArtifactURL: URL(fileURLWithPath: source.downloadedPath),
+                    builderInputURL: URL(fileURLWithPath: inputPath)
+                )
+            }
+        )
+    } else {
+        manifestRequest = nil
+    }
+
     do {
         try UltraCompactBuilder.createUltraCompact(
             ipv4TSV: v4Path,
@@ -138,6 +191,16 @@ case .buildUltra:
             to: outputPath,
             metadata: metadata
         )
+
+        if let manifestRequest, let generationTimestamp {
+            let manifest = try DatabaseBuildManifest.create(
+                databaseURL: URL(fileURLWithPath: outputPath),
+                sourceInputs: manifestRequest.sourceInputs,
+                builderVersion: manifestRequest.builderVersion,
+                generatedAt: generationTimestamp
+            )
+            try manifest.write(to: URL(fileURLWithPath: manifestRequest.path))
+        }
     } catch {
         fputs("Error: \(error)\n", stderr)
         exit(1)

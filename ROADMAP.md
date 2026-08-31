@@ -152,12 +152,12 @@ but it must be documented as routing-data attribution, not IP geolocation.
 ### Artifact provenance
 
 - [ ] Publish a machine-readable build manifest alongside hosted databases.
-- [ ] Include source URLs, source digests, builder version, output digest,
+- [x] Include source URLs, source digests, builder version, output digest,
       counts, and generation time in the manifest.
-- [ ] Decide the trust model for hosted artifacts. A checksum detects accidental
+- [x] Decide the trust model for hosted artifacts. A checksum detects accidental
       corruption but is not authenticity when served from the same origin; if
       authenticity is required, use a signed manifest and a pinned public key.
-- [ ] Add update-workflow sanity thresholds for unexpected range-count or file
+- [x] Add update-workflow sanity thresholds for unexpected range-count or file
       size changes, while allowing an explicit maintainer override.
 
 ### Exit criteria

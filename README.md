@@ -205,6 +205,17 @@ produce the legacy ULT2 layout. Supplying the same normalized TSV inputs,
 generation timestamp, and source identifier produces identical database bytes
 and the same build identifier.
 
+Automated database updates also write `ip2asn.manifest.json`. Its versioned JSON
+schema records source URLs, SHA-256 digests of the downloaded archives and
+decompressed builder inputs, the builder Git revision, output digest, database
+build identifier, range counts, and generation time. The database and manifest
+should be published together.
+
+The manifest provides checksums and an audit trail; it is not a cryptographic
+signature. Authenticity currently depends on HTTPS plus the repository's
+reviewed update workflow. A future signed-manifest design would require clients
+to pin a public key rather than trusting a signature served from the same origin.
+
 ### CLI Tools
 
 An executable `ip2asn-tools` is included for database management:
