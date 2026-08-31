@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Project roadmap covering reliability, provenance, API stabilization, Linux support, and the path to 1.0.
 - `IP2ASNDataPrep` as an explicit SwiftPM library product, matching the documented custom database builder API.
 - Injectable internal HTTP transport and deterministic coverage for remote caching, refresh responses, failures, malformed payloads, and request coalescing.
+- Adversarial ULT2 fixtures covering hostile count fields, overlong varints, range overflow and ordering, malformed names, and forward-compatible trailing data.
 
 ### Changed
 - Corrected README, DocC, contributor, and source documentation to match the current API, database size, documentation URL, and Swift 6.1 toolchain requirement.
@@ -15,6 +16,8 @@ All notable changes to this project will be documented in this file.
 - Defined the `IP2ASN` convenience API as a single active remote configuration; changing or clearing `bundledPath` now replaces the prior in-memory `RemoteDatabase` instead of retaining the first custom path indefinitely.
 - Coalesced concurrent remote fetches so overlapping loads and refreshes share one download.
 - Moved production-CDN checks into an `IP2ASN_RUN_NETWORK=1` opt-in smoke-test suite; the default test suite no longer requires network access.
+- Hardened ULT2 parsing against allocation abuse, integer overflow, reversed or overlapping ranges, invalid UTF-8, duplicate name records, and decompression-size arithmetic overflow.
+- `clearCache()` now cancels an in-flight download before removing cached state.
 
 ## [0.4.1] - 2026-07-14
 

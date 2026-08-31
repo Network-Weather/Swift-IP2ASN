@@ -386,6 +386,24 @@ final class RemoteDatabaseTests: XCTestCase {
         XCTAssertEqual(db3.entryCount, count1, "New instance should use disk cache")
     }
 
+    func testRemoteDatabaseUsesValidCacheWhenMetadataWriteIsMissing() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let remote = try makeRemote(cacheDirectory: tempDir)
+        let downloadedDatabase = try await remote.load()
+
+        let metadataURL = tempDir.appendingPathComponent("ip2asn.meta.json")
+        try FileManager.default.removeItem(at: metadataURL)
+
+        let (reloadedRemote, transport) = try makeRemoteAndTransport(cacheDirectory: tempDir)
+        let reloadedDatabase = try await reloadedRemote.load()
+
+        XCTAssertEqual(reloadedDatabase.entryCount, downloadedDatabase.entryCount)
+        let requestedMethods = await transport.requestedMethods()
+        XCTAssertTrue(requestedMethods.isEmpty, "A valid cache should not require metadata to load")
+    }
+
     func testRemoteDatabaseClearCache() async throws {
         let tempDir = createTempDir()
         defer { cleanup(tempDir) }
@@ -403,6 +421,45 @@ final class RemoteDatabaseTests: XCTestCase {
         let cachePathAfter = await remote.cachePath()
         XCTAssertFalse(isCachedAfter, "Should not be cached after clear")
         XCTAssertNil(cachePathAfter, "Cache path should be nil after clear")
+    }
+
+    func testRemoteDatabaseClearCacheCancelsInFlightFetch() async throws {
+        let tempDir = createTempDir()
+        defer { cleanup(tempDir) }
+
+        let configuration = StubRemoteDatabaseHTTPTransport.Configuration(
+            databaseData: try embeddedDatabaseData(),
+            delayNanoseconds: 500_000_000
+        )
+        let (remote, transport) = try makeRemoteAndTransport(
+            cacheDirectory: tempDir,
+            configuration: configuration
+        )
+
+        let loadTask = Task { try await remote.load() }
+        for _ in 0..<100 {
+            if !(await transport.requestedMethods()).isEmpty {
+                break
+            }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        let requestedMethods = await transport.requestedMethods()
+        XCTAssertEqual(requestedMethods, ["GET"])
+
+        try await remote.clearCache()
+        do {
+            _ = try await loadTask.value
+            XCTFail("Clearing the cache should cancel an in-flight fetch")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+
+        let isCached = await remote.isCached()
+        let cachePath = await remote.cachePath()
+        XCTAssertFalse(isCached)
+        XCTAssertNil(cachePath)
     }
 
     // MARK: - Refresh Tests

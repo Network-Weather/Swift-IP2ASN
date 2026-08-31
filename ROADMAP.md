@@ -97,12 +97,14 @@ adding new public behavior.
 
 ### Parser and cache hardening
 
-- [ ] Validate declared counts against available input before reserving memory.
-- [ ] Reject integer overflow, reversed ranges, invalid ordering, and malformed
-      name-table data with specific errors.
-- [ ] Add a corpus of malformed ULT2 fixtures and fuzz or property-based parser
-      coverage.
-- [ ] Verify database and metadata writes remain atomic and coherent across
+- [x] Validate declared counts against available input before reserving memory.
+- [x] Reject integer overflow, reversed ranges, invalid ordering, and malformed
+      name-table data.
+- [ ] Replace broad `corruptedData` failures with specific public validation
+      diagnostics before stabilizing the error contract.
+- [x] Add a corpus of malformed ULT2 fixtures.
+- [x] Add fuzz or property-based parser coverage.
+- [x] Verify database and metadata writes remain atomic and coherent across
       cancellation and process interruption.
 
 ### Exit criteria

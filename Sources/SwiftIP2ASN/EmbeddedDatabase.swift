@@ -397,6 +397,8 @@ public actor RemoteDatabase {
     ///
     /// - Throws: If file deletion fails.
     public func clearCache() throws {
+        fetchTask?.cancel()
+        fetchTask = nil
         cachedDatabase = nil
         if FileManager.default.fileExists(atPath: cacheURL.path) {
             try FileManager.default.removeItem(at: cacheURL)

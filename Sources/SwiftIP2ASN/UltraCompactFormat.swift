@@ -60,6 +60,9 @@ public enum UltraCompactFormat {
             let byte = buffer.load(fromByteOffset: offset, as: UInt8.self)
             offset += 1
 
+            if shift == 28, byte & 0xF0 != 0 {
+                return nil
+            }
             result |= UInt32(byte & 0x7F) << shift
 
             if byte & 0x80 == 0 {
@@ -85,6 +88,9 @@ public enum UltraCompactFormat {
             let byte = data[offset]
             offset += 1
 
+            if shift == 28, byte & 0xF0 != 0 {
+                return nil
+            }
             result |= UInt32(byte & 0x7F) << shift
 
             if byte & 0x80 == 0 {
@@ -174,6 +180,24 @@ public struct UltraCompactDatabase: Sendable {
         let v6Count = Int(readUInt32LE(at: 10))
         let asnCount = Int(readUInt32LE(at: 14))
 
+        // Validate the cheapest possible representation before reserving arrays.
+        // This prevents hostile count fields from causing excessive allocation.
+        let (minimumV4Bytes, v4SizeOverflow) = v4Count.multipliedReportingOverflow(by: 6)
+        let (minimumV6Bytes, v6SizeOverflow) = v6Count.multipliedReportingOverflow(by: 33)
+        let (minimumASNBytes, asnSizeOverflow) = asnCount.multipliedReportingOverflow(by: 2)
+        let (minimumRangeBytes, rangeSizeOverflow) = minimumV4Bytes.addingReportingOverflow(minimumV6Bytes)
+        let (minimumPayloadBytes, payloadSizeOverflow) = minimumRangeBytes.addingReportingOverflow(minimumASNBytes)
+        guard
+            !v4SizeOverflow,
+            !v6SizeOverflow,
+            !asnSizeOverflow,
+            !rangeSizeOverflow,
+            !payloadSizeOverflow,
+            minimumPayloadBytes <= decompressed.count - 18
+        else {
+            throw UltraCompactError.corruptedData
+        }
+
         var v4StartIPs: [UInt32] = []
         var v4EndIPs: [UInt32] = []
         var v4Asns: [UInt32] = []
@@ -194,8 +218,15 @@ public struct UltraCompactDatabase: Sendable {
             else {
                 throw UltraCompactError.corruptedData
             }
+            let (endIP, endOverflow) = startIP.addingReportingOverflow(size)
+            guard !endOverflow else {
+                throw UltraCompactError.corruptedData
+            }
+            if let previousEnd = v4EndIPs.last, startIP <= previousEnd {
+                throw UltraCompactError.corruptedData
+            }
             v4StartIPs.append(startIP)
-            v4EndIPs.append(startIP &+ size)
+            v4EndIPs.append(endIP)
             v4Asns.append(asn)
         }
 
@@ -210,6 +241,12 @@ public struct UltraCompactDatabase: Sendable {
         v6EndLo.reserveCapacity(v6Count)
         v6Asns.reserveCapacity(v6Count)
 
+        func compare128(_ aHi: UInt64, _ aLo: UInt64, _ bHi: UInt64, _ bLo: UInt64) -> Int {
+            if aHi != bHi { return aHi < bHi ? -1 : 1 }
+            if aLo != bLo { return aLo < bLo ? -1 : 1 }
+            return 0
+        }
+
         for _ in 0..<v6Count {
             guard offset + 32 <= decompressed.count else {
                 throw UltraCompactError.corruptedData
@@ -220,6 +257,15 @@ public struct UltraCompactDatabase: Sendable {
             let eLo = readUInt64BE(at: offset + 24)
             offset += 32
             guard let asn = UltraCompactFormat.decodeVarint(from: decompressed, offset: &offset) else {
+                throw UltraCompactError.corruptedData
+            }
+            guard compare128(sHi, sLo, eHi, eLo) <= 0 else {
+                throw UltraCompactError.corruptedData
+            }
+            if let previousEndHi = v6EndHi.last,
+                let previousEndLo = v6EndLo.last,
+                compare128(sHi, sLo, previousEndHi, previousEndLo) <= 0
+            {
                 throw UltraCompactError.corruptedData
             }
             v6StartHi.append(sHi)
@@ -238,14 +284,16 @@ public struct UltraCompactDatabase: Sendable {
             else {
                 throw UltraCompactError.corruptedData
             }
-            guard offset + Int(nameLen) <= decompressed.count else {
+            let nameLength = Int(nameLen)
+            guard nameLength <= decompressed.count - offset else {
                 throw UltraCompactError.corruptedData
             }
-            let nameData = decompressed[offset..<offset + Int(nameLen)]
-            if let name = String(data: nameData, encoding: .utf8) {
-                asnNames[asn] = name
+            let nameData = decompressed[offset..<offset + nameLength]
+            guard let name = String(data: nameData, encoding: .utf8), asnNames[asn] == nil else {
+                throw UltraCompactError.corruptedData
             }
-            offset += Int(nameLen)
+            asnNames[asn] = name
+            offset += nameLength
         }
 
         self.v4StartIPs = v4StartIPs
@@ -320,7 +368,15 @@ public struct UltraCompactDatabase: Sendable {
     // MARK: - Decompression
 
     private static func decompress(_ data: Data) throws -> Data {
-        var bufferSize = data.count * 8
+        guard !data.isEmpty else {
+            throw UltraCompactError.decompressionFailed
+        }
+        let (initialBufferSize, initialSizeOverflow) = data.count.multipliedReportingOverflow(by: 8)
+        guard !initialSizeOverflow else {
+            throw UltraCompactError.decompressionFailed
+        }
+
+        var bufferSize = initialBufferSize
         var attempts = 0
         let maxAttempts = 3
 
@@ -341,8 +397,14 @@ public struct UltraCompactDatabase: Sendable {
                 return Data(bytes: buffer, count: decompressedSize)
             }
 
-            bufferSize *= 2
             attempts += 1
+            if attempts < maxAttempts {
+                let (nextBufferSize, sizeOverflow) = bufferSize.multipliedReportingOverflow(by: 2)
+                guard !sizeOverflow else {
+                    throw UltraCompactError.decompressionFailed
+                }
+                bufferSize = nextBufferSize
+            }
         }
 
         throw UltraCompactError.decompressionFailed
