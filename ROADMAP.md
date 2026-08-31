@@ -111,7 +111,8 @@ adding new public behavior.
 
 - The default test suite is fully offline and deterministic.
 - Live-network tests are isolated and clearly reported.
-- All supported Apple-platform builds pass in CI.
+- All supported Apple-platform builds pass in CI using the documented minimum
+  Swift 6.1 toolchain.
 - Public documentation names only APIs that exist and states the 6.1 toolchain
   requirement accurately.
 - The simple API has documented, tested configuration semantics.

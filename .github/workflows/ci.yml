@@ -6,10 +6,16 @@ on:
 
 jobs:
   build-test:
-    runs-on: macos-latest
+    name: Build and test (Swift 6.1)
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Select Xcode 16.4 (Swift 6.1)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.4'
 
       - name: Build (release)
         run: swift build -c release
@@ -17,3 +23,37 @@ jobs:
       - name: Test (offline only)
         run: swift test
 
+  apple-platform-builds:
+    name: Build (${{ matrix.name }})
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            destination: generic/platform=macOS
+          - name: iOS
+            destination: generic/platform=iOS
+          - name: tvOS
+            destination: generic/platform=tvOS
+          - name: watchOS
+            destination: generic/platform=watchOS
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Select Xcode 16.4 (Swift 6.1)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.4'
+
+      - name: Build SwiftIP2ASN
+        env:
+          DESTINATION: ${{ matrix.destination }}
+        run: |
+          xcodebuild -quiet \
+            -scheme SwiftIP2ASN \
+            -destination "$DESTINATION" \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO \
+            build
