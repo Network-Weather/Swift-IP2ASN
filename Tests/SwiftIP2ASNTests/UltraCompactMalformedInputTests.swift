@@ -7,14 +7,30 @@ import XCTest
 final class UltraCompactMalformedInputTests: XCTestCase {
     func testRejectsImpossibleHeaderCountsBeforeAllocation() throws {
         let raw = makeHeader(v4Count: .max)
-        try assertCorrupted(raw)
+        try assertValidationFailure(
+            raw,
+            equals: .init(
+                section: .ipv4Ranges,
+                field: .count,
+                reason: .exceedsAvailableData,
+                value: UInt64(UInt32.max)
+            )
+        )
     }
 
     func testRejectsOverlongUInt32Varints() throws {
         var raw = makeHeader(v4Count: 1)
         appendUInt32BE(0, to: &raw)
         raw.append(contentsOf: [0xFF, 0xFF, 0xFF, 0xFF, 0x10])
-        try assertCorrupted(raw)
+        try assertValidationFailure(
+            raw,
+            equals: .init(
+                section: .ipv4Ranges,
+                entryIndex: 0,
+                field: .rangeSize,
+                reason: .malformedVarint
+            )
+        )
 
         var dataOffset = 0
         XCTAssertNil(UltraCompactFormat.decodeVarint(from: Data([0xFF, 0xFF, 0xFF, 0xFF, 0x10]), offset: &dataOffset))
@@ -31,30 +47,60 @@ final class UltraCompactMalformedInputTests: XCTestCase {
         appendUInt32BE(.max, to: &raw)
         raw.append(contentsOf: UltraCompactFormat.encodeVarint(1))
         raw.append(contentsOf: UltraCompactFormat.encodeVarint(64512))
-        try assertCorrupted(raw)
+        try assertValidationFailure(
+            raw,
+            equals: .init(
+                section: .ipv4Ranges,
+                entryIndex: 0,
+                field: .endAddress,
+                reason: .arithmeticOverflow
+            )
+        )
     }
 
     func testRejectsOverlappingOrUnsortedIPv4Ranges() throws {
         var overlapping = makeHeader(v4Count: 2)
         appendIPv4Range(start: 10, size: 10, asn: 1, to: &overlapping)
         appendIPv4Range(start: 20, size: 10, asn: 2, to: &overlapping)
-        try assertCorrupted(overlapping)
+        let issue = UltraCompactValidationIssue(
+            section: .ipv4Ranges,
+            entryIndex: 1,
+            field: .startAddress,
+            reason: .overlappingOrUnsortedRange
+        )
+        try assertValidationFailure(overlapping, equals: issue)
 
         var unsorted = makeHeader(v4Count: 2)
         appendIPv4Range(start: 100, size: 10, asn: 1, to: &unsorted)
         appendIPv4Range(start: 50, size: 10, asn: 2, to: &unsorted)
-        try assertCorrupted(unsorted)
+        try assertValidationFailure(unsorted, equals: issue)
     }
 
     func testRejectsReversedOrOverlappingIPv6Ranges() throws {
         var reversed = makeHeader(v6Count: 1)
         appendIPv6Range(startHi: 1, startLo: 0, endHi: 0, endLo: .max, asn: 1, to: &reversed)
-        try assertCorrupted(reversed)
+        try assertValidationFailure(
+            reversed,
+            equals: .init(
+                section: .ipv6Ranges,
+                entryIndex: 0,
+                field: .endAddress,
+                reason: .reversedRange
+            )
+        )
 
         var overlapping = makeHeader(v6Count: 2)
         appendIPv6Range(startHi: 0, startLo: 10, endHi: 0, endLo: 20, asn: 1, to: &overlapping)
         appendIPv6Range(startHi: 0, startLo: 20, endHi: 0, endLo: 30, asn: 2, to: &overlapping)
-        try assertCorrupted(overlapping)
+        try assertValidationFailure(
+            overlapping,
+            equals: .init(
+                section: .ipv6Ranges,
+                entryIndex: 1,
+                field: .startAddress,
+                reason: .overlappingOrUnsortedRange
+            )
+        )
     }
 
     func testRejectsInvalidUTF8AndDuplicateASNNames() throws {
@@ -62,12 +108,47 @@ final class UltraCompactMalformedInputTests: XCTestCase {
         invalidUTF8.append(contentsOf: UltraCompactFormat.encodeVarint(1))
         invalidUTF8.append(contentsOf: UltraCompactFormat.encodeVarint(1))
         invalidUTF8.append(0xFF)
-        try assertCorrupted(invalidUTF8)
+        try assertValidationFailure(
+            invalidUTF8,
+            equals: .init(
+                section: .asnNames,
+                entryIndex: 0,
+                field: .name,
+                reason: .invalidUTF8
+            )
+        )
 
         var duplicate = makeHeader(asnCount: 2)
         appendASNName(asn: 1, name: "A", to: &duplicate)
         appendASNName(asn: 1, name: "B", to: &duplicate)
-        try assertCorrupted(duplicate)
+        try assertValidationFailure(
+            duplicate,
+            equals: .init(
+                section: .asnNames,
+                entryIndex: 1,
+                field: .asn,
+                reason: .duplicateValue,
+                value: 1
+            )
+        )
+    }
+
+    func testReportsTruncatedASNName() throws {
+        var raw = makeHeader(asnCount: 1)
+        raw.append(contentsOf: UltraCompactFormat.encodeVarint(64512))
+        raw.append(contentsOf: UltraCompactFormat.encodeVarint(8))
+        raw.append(contentsOf: "short".utf8)
+
+        try assertValidationFailure(
+            raw,
+            equals: .init(
+                section: .asnNames,
+                entryIndex: 0,
+                field: .name,
+                reason: .truncated,
+                value: 8
+            )
+        )
     }
 
     func testAllowsAdjacentRangesAndAdditiveTrailingData() throws {
@@ -111,17 +192,19 @@ final class UltraCompactMalformedInputTests: XCTestCase {
         }
     }
 
-    private func assertCorrupted(
+    private func assertValidationFailure(
         _ raw: Data,
+        equals expectedIssue: UltraCompactValidationIssue,
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
         let compressed = try compress(raw)
         XCTAssertThrowsError(try UltraCompactDatabase(data: compressed), file: file, line: line) { error in
-            guard case UltraCompactError.corruptedData = error else {
-                XCTFail("Expected corruptedData, got \(error)", file: file, line: line)
+            guard case UltraCompactError.validationFailed(let issue) = error else {
+                XCTFail("Expected validationFailed, got \(error)", file: file, line: line)
                 return
             }
+            XCTAssertEqual(issue, expectedIssue, file: file, line: line)
         }
     }
 

@@ -100,7 +100,7 @@ adding new public behavior.
 - [x] Validate declared counts against available input before reserving memory.
 - [x] Reject integer overflow, reversed ranges, invalid ordering, and malformed
       name-table data.
-- [ ] Replace broad `corruptedData` failures with specific public validation
+- [x] Replace broad `corruptedData` failures with specific public validation
       diagnostics before stabilizing the error contract.
 - [x] Add a corpus of malformed ULT2 fixtures.
 - [x] Add fuzz or property-based parser coverage.

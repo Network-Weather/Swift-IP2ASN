@@ -180,22 +180,55 @@ public struct UltraCompactDatabase: Sendable {
         let v6Count = Int(readUInt32LE(at: 10))
         let asnCount = Int(readUInt32LE(at: 14))
 
+        func validationFailed(
+            section: UltraCompactValidationIssue.Section,
+            entryIndex: Int? = nil,
+            field: UltraCompactValidationIssue.Field,
+            reason: UltraCompactValidationIssue.Reason,
+            value: UInt64? = nil
+        ) -> UltraCompactError {
+            .validationFailed(
+                UltraCompactValidationIssue(
+                    section: section,
+                    entryIndex: entryIndex,
+                    field: field,
+                    reason: reason,
+                    value: value
+                )
+            )
+        }
+
         // Validate the cheapest possible representation before reserving arrays.
         // This prevents hostile count fields from causing excessive allocation.
         let (minimumV4Bytes, v4SizeOverflow) = v4Count.multipliedReportingOverflow(by: 6)
         let (minimumV6Bytes, v6SizeOverflow) = v6Count.multipliedReportingOverflow(by: 33)
         let (minimumASNBytes, asnSizeOverflow) = asnCount.multipliedReportingOverflow(by: 2)
-        let (minimumRangeBytes, rangeSizeOverflow) = minimumV4Bytes.addingReportingOverflow(minimumV6Bytes)
-        let (minimumPayloadBytes, payloadSizeOverflow) = minimumRangeBytes.addingReportingOverflow(minimumASNBytes)
-        guard
-            !v4SizeOverflow,
-            !v6SizeOverflow,
-            !asnSizeOverflow,
-            !rangeSizeOverflow,
-            !payloadSizeOverflow,
-            minimumPayloadBytes <= decompressed.count - 18
-        else {
-            throw UltraCompactError.corruptedData
+        let availablePayloadBytes = decompressed.count - 18
+        guard !v4SizeOverflow, minimumV4Bytes <= availablePayloadBytes else {
+            throw validationFailed(
+                section: .ipv4Ranges,
+                field: .count,
+                reason: .exceedsAvailableData,
+                value: UInt64(v4Count)
+            )
+        }
+        let bytesAfterIPv4Minimum = availablePayloadBytes - minimumV4Bytes
+        guard !v6SizeOverflow, minimumV6Bytes <= bytesAfterIPv4Minimum else {
+            throw validationFailed(
+                section: .ipv6Ranges,
+                field: .count,
+                reason: .exceedsAvailableData,
+                value: UInt64(v6Count)
+            )
+        }
+        let bytesAfterRangeMinimum = bytesAfterIPv4Minimum - minimumV6Bytes
+        guard !asnSizeOverflow, minimumASNBytes <= bytesAfterRangeMinimum else {
+            throw validationFailed(
+                section: .asnNames,
+                field: .count,
+                reason: .exceedsAvailableData,
+                value: UInt64(asnCount)
+            )
         }
 
         var v4StartIPs: [UInt32] = []
@@ -207,23 +240,49 @@ public struct UltraCompactDatabase: Sendable {
 
         var offset = 18
 
-        for _ in 0..<v4Count {
+        for index in 0..<v4Count {
             guard offset + 4 <= decompressed.count else {
-                throw UltraCompactError.corruptedData
+                throw validationFailed(
+                    section: .ipv4Ranges,
+                    entryIndex: index,
+                    field: .startAddress,
+                    reason: .truncated
+                )
             }
             let startIP = readUInt32BE(at: offset)
             offset += 4
-            guard let size = UltraCompactFormat.decodeVarint(from: decompressed, offset: &offset),
-                let asn = UltraCompactFormat.decodeVarint(from: decompressed, offset: &offset)
-            else {
-                throw UltraCompactError.corruptedData
+            guard let size = UltraCompactFormat.decodeVarint(from: decompressed, offset: &offset) else {
+                throw validationFailed(
+                    section: .ipv4Ranges,
+                    entryIndex: index,
+                    field: .rangeSize,
+                    reason: .malformedVarint
+                )
+            }
+            guard let asn = UltraCompactFormat.decodeVarint(from: decompressed, offset: &offset) else {
+                throw validationFailed(
+                    section: .ipv4Ranges,
+                    entryIndex: index,
+                    field: .asn,
+                    reason: .malformedVarint
+                )
             }
             let (endIP, endOverflow) = startIP.addingReportingOverflow(size)
             guard !endOverflow else {
-                throw UltraCompactError.corruptedData
+                throw validationFailed(
+                    section: .ipv4Ranges,
+                    entryIndex: index,
+                    field: .endAddress,
+                    reason: .arithmeticOverflow
+                )
             }
             if let previousEnd = v4EndIPs.last, startIP <= previousEnd {
-                throw UltraCompactError.corruptedData
+                throw validationFailed(
+                    section: .ipv4Ranges,
+                    entryIndex: index,
+                    field: .startAddress,
+                    reason: .overlappingOrUnsortedRange
+                )
             }
             v4StartIPs.append(startIP)
             v4EndIPs.append(endIP)
@@ -247,9 +306,14 @@ public struct UltraCompactDatabase: Sendable {
             return 0
         }
 
-        for _ in 0..<v6Count {
+        for index in 0..<v6Count {
             guard offset + 32 <= decompressed.count else {
-                throw UltraCompactError.corruptedData
+                throw validationFailed(
+                    section: .ipv6Ranges,
+                    entryIndex: index,
+                    field: .startAddress,
+                    reason: .truncated
+                )
             }
             let sHi = readUInt64BE(at: offset)
             let sLo = readUInt64BE(at: offset + 8)
@@ -257,16 +321,31 @@ public struct UltraCompactDatabase: Sendable {
             let eLo = readUInt64BE(at: offset + 24)
             offset += 32
             guard let asn = UltraCompactFormat.decodeVarint(from: decompressed, offset: &offset) else {
-                throw UltraCompactError.corruptedData
+                throw validationFailed(
+                    section: .ipv6Ranges,
+                    entryIndex: index,
+                    field: .asn,
+                    reason: .malformedVarint
+                )
             }
             guard compare128(sHi, sLo, eHi, eLo) <= 0 else {
-                throw UltraCompactError.corruptedData
+                throw validationFailed(
+                    section: .ipv6Ranges,
+                    entryIndex: index,
+                    field: .endAddress,
+                    reason: .reversedRange
+                )
             }
             if let previousEndHi = v6EndHi.last,
                 let previousEndLo = v6EndLo.last,
                 compare128(sHi, sLo, previousEndHi, previousEndLo) <= 0
             {
-                throw UltraCompactError.corruptedData
+                throw validationFailed(
+                    section: .ipv6Ranges,
+                    entryIndex: index,
+                    field: .startAddress,
+                    reason: .overlappingOrUnsortedRange
+                )
             }
             v6StartHi.append(sHi)
             v6StartLo.append(sLo)
@@ -278,19 +357,50 @@ public struct UltraCompactDatabase: Sendable {
         var asnNames: [UInt32: String] = [:]
         asnNames.reserveCapacity(asnCount)
 
-        for _ in 0..<asnCount {
-            guard let asn = UltraCompactFormat.decodeVarint(from: decompressed, offset: &offset),
-                let nameLen = UltraCompactFormat.decodeVarint(from: decompressed, offset: &offset)
-            else {
-                throw UltraCompactError.corruptedData
+        for index in 0..<asnCount {
+            guard let asn = UltraCompactFormat.decodeVarint(from: decompressed, offset: &offset) else {
+                throw validationFailed(
+                    section: .asnNames,
+                    entryIndex: index,
+                    field: .asn,
+                    reason: .malformedVarint
+                )
+            }
+            guard let nameLen = UltraCompactFormat.decodeVarint(from: decompressed, offset: &offset) else {
+                throw validationFailed(
+                    section: .asnNames,
+                    entryIndex: index,
+                    field: .nameLength,
+                    reason: .malformedVarint
+                )
             }
             let nameLength = Int(nameLen)
             guard nameLength <= decompressed.count - offset else {
-                throw UltraCompactError.corruptedData
+                throw validationFailed(
+                    section: .asnNames,
+                    entryIndex: index,
+                    field: .name,
+                    reason: .truncated,
+                    value: UInt64(nameLen)
+                )
             }
             let nameData = decompressed[offset..<offset + nameLength]
-            guard let name = String(data: nameData, encoding: .utf8), asnNames[asn] == nil else {
-                throw UltraCompactError.corruptedData
+            guard let name = String(data: nameData, encoding: .utf8) else {
+                throw validationFailed(
+                    section: .asnNames,
+                    entryIndex: index,
+                    field: .name,
+                    reason: .invalidUTF8
+                )
+            }
+            guard asnNames[asn] == nil else {
+                throw validationFailed(
+                    section: .asnNames,
+                    entryIndex: index,
+                    field: .asn,
+                    reason: .duplicateValue,
+                    value: UInt64(asn)
+                )
             }
             asnNames[asn] = name
             offset += nameLength
@@ -413,11 +523,87 @@ public struct UltraCompactDatabase: Sendable {
 
 // MARK: - Error
 
+/// Structured context for a malformed ULT2 payload.
+///
+/// Inspect this value when ``UltraCompactError/validationFailed(_:)`` is
+/// thrown to identify the section, entry, field, and validation rule that
+/// rejected the database.
+public struct UltraCompactValidationIssue: Equatable, Sendable {
+    /// Logical section of the ULT2 payload being decoded.
+    public enum Section: String, Equatable, Sendable {
+        case ipv4Ranges
+        case ipv6Ranges
+        case asnNames
+    }
+
+    /// Field within the section that failed validation.
+    public enum Field: String, Equatable, Sendable {
+        case count
+        case startAddress
+        case endAddress
+        case rangeSize
+        case asn
+        case nameLength
+        case name
+    }
+
+    /// Rule violated by the encoded field.
+    public enum Reason: String, Equatable, Sendable {
+        case exceedsAvailableData
+        case truncated
+        case malformedVarint
+        case arithmeticOverflow
+        case reversedRange
+        case overlappingOrUnsortedRange
+        case invalidUTF8
+        case duplicateValue
+    }
+
+    /// Payload section containing the rejected field.
+    public let section: Section
+
+    /// Zero-based entry index, or `nil` when the issue applies to a section count.
+    public let entryIndex: Int?
+
+    /// Encoded field that failed validation.
+    public let field: Field
+
+    /// Validation rule violated by the field.
+    public let reason: Reason
+
+    /// Encoded count, length, or duplicate ASN when one helps diagnose the issue.
+    public let value: UInt64?
+
+    /// Creates structured validation context.
+    public init(
+        section: Section,
+        entryIndex: Int? = nil,
+        field: Field,
+        reason: Reason,
+        value: UInt64? = nil
+    ) {
+        self.section = section
+        self.entryIndex = entryIndex
+        self.field = field
+        self.reason = reason
+        self.value = value
+    }
+}
+
+/// Errors produced while encoding or loading an ultra-compact database.
 public enum UltraCompactError: Error, Sendable {
     case compressionFailed
     case decompressionFailed
     case invalidFormat
+
+    /// A legacy catch-all retained for source compatibility.
+    ///
+    /// New ULT2 validation failures use ``validationFailed(_:)``.
+    @available(*, deprecated, message: "Inspect validationFailed(_:) for structured diagnostics")
     case corruptedData
+
+    /// The payload structure was recognized, but a field failed validation.
+    case validationFailed(UltraCompactValidationIssue)
     case unsupportedVersion(UInt8)
 }
 
