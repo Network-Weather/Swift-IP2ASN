@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 - Adversarial ULT2 fixtures covering hostile count fields, overlong varints, range overflow and ordering, malformed names, and forward-compatible trailing data.
 - CI compile coverage for the SwiftIP2ASN library on macOS, iOS, tvOS, and watchOS.
 - Structured public ULT2 validation diagnostics identifying the failing section, entry, field, reason, and relevant encoded value.
+- Public database metadata with stable SHA-256 build identifiers, range counts, optional generation/source provenance, and runtime origin.
+- A backward-compatible flagged ULT2 metadata trailer and reproducible builder metadata settings.
 
 ### Changed
 - Corrected README, DocC, contributor, and source documentation to match the current API, database size, documentation URL, and Swift 6.1 toolchain requirement.
@@ -22,6 +24,7 @@ All notable changes to this project will be documented in this file.
 - `clearCache()` now cancels an in-flight download before removing cached state.
 - Pinned CI to Xcode 16.4 so builds and tests continuously verify the documented Swift 6.1 minimum toolchain.
 - Retained `UltraCompactError.corruptedData` only as a deprecated source-compatibility case; parser validation now reports `validationFailed(_:)`.
+- The database update workflow now records its UTC generation time and `iptoasn.com` source identifier in generated artifacts.
 
 ## [0.4.1] - 2026-07-14
 

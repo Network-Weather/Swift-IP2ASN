@@ -151,8 +151,28 @@ final class UltraCompactMalformedInputTests: XCTestCase {
         )
     }
 
+    func testRejectsTamperedMetadataBuildIdentifier() throws {
+        var raw = makeHeader(flags: UltraCompactFormat.metadataFlag)
+        raw.append(contentsOf: "UMD1".utf8)
+        appendUInt64LE(1_800_000_000, to: &raw)
+        let source = Data("iptoasn.com".utf8)
+        raw.append(contentsOf: UltraCompactFormat.encodeVarint(UInt32(source.count)))
+        raw.append(source)
+        raw.append(StableSHA256.digest(raw))
+        raw[raw.count - 1] ^= 0x01
+
+        try assertValidationFailure(
+            raw,
+            equals: .init(
+                section: .metadata,
+                field: .buildIdentifier,
+                reason: .invalidValue
+            )
+        )
+    }
+
     func testAllowsAdjacentRangesAndAdditiveTrailingData() throws {
-        var raw = makeHeader(v4Count: 2, flags: 0xFF)
+        var raw = makeHeader(v4Count: 2, flags: 0xFE)
         appendIPv4Range(start: 10, size: 10, asn: 1, to: &raw)
         appendIPv4Range(start: 21, size: 10, asn: 2, to: &raw)
         raw.append(contentsOf: "future trailer".utf8)
@@ -272,6 +292,12 @@ final class UltraCompactMalformedInputTests: XCTestCase {
 
     private func appendUInt64BE(_ value: UInt64, to data: inout Data) {
         for shift in stride(from: 56, through: 0, by: -8) {
+            data.append(UInt8((value >> UInt64(shift)) & 0xFF))
+        }
+    }
+
+    private func appendUInt64LE(_ value: UInt64, to data: inout Data) {
+        for shift in stride(from: 0, through: 56, by: 8) {
             data.append(UInt8((value >> UInt64(shift)) & 0xFF))
         }
     }

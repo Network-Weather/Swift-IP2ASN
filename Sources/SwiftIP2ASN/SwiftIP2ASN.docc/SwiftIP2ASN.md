@@ -71,6 +71,22 @@ let db = try await remote.load()
 Task { try? await remote.refresh() }
 ```
 
+### Inspecting Database Identity
+
+Each loaded database reports a stable identity and how it entered the process:
+
+```swift
+let db = try await remote.load()
+print(db.metadata.buildIdentifier)
+print(db.metadata.generationTimestamp as Any)
+print(db.metadata.sourceIdentifier as Any)
+print(db.origin)
+```
+
+Legacy ULT2 databases have no encoded generation timestamp or source identifier,
+so those two properties are `nil`. Their range counts and stable build identifier
+remain available.
+
 ## Topics
 
 ### Essentials
@@ -79,6 +95,8 @@ Task { try? await remote.refresh() }
 - ``EmbeddedDatabase``
 - ``RemoteDatabase``
 - ``UltraCompactDatabase``
+- ``DatabaseMetadata``
+- ``DatabaseOrigin``
 
 ### IP Address Types
 

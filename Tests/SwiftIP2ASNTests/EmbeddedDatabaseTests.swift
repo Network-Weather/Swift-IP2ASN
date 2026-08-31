@@ -160,6 +160,10 @@ final class IP2ASNSimpleAPITests: XCTestCase {
         let db = try IP2ASN.embedded()
 
         XCTAssertGreaterThan(db.entryCount, 100_000, "Should have substantial entries")
+        XCTAssertEqual(db.origin, .embedded)
+        XCTAssertEqual(db.metadata.ipv4RangeCount, db.ipv4EntryCount)
+        XCTAssertEqual(db.metadata.ipv6RangeCount, db.ipv6EntryCount)
+        XCTAssertEqual(db.metadata.buildIdentifier.count, 64)
 
         // Test lookups
         let google = db.lookup("8.8.8.8")
@@ -353,6 +357,7 @@ final class RemoteDatabaseTests: XCTestCase {
 
         // First load fetches from network
         let db = try await remote.load()
+        XCTAssertEqual(db.origin, .downloaded)
         XCTAssertGreaterThan(db.entryCount, 100_000, "Should have substantial entries")
         XCTAssertGreaterThan(db.uniqueASNCount, 10_000, "Should have many unique ASNs")
 
@@ -374,6 +379,7 @@ final class RemoteDatabaseTests: XCTestCase {
 
         // First load
         let db1 = try await remote.load()
+        XCTAssertEqual(db1.origin, .downloaded)
         let count1 = db1.entryCount
 
         // Second load should use cache (same instance)
@@ -383,6 +389,7 @@ final class RemoteDatabaseTests: XCTestCase {
         // Create new instance pointing to same cache
         let remote2 = try makeRemote(cacheDirectory: tempDir)
         let db3 = try await remote2.load()
+        XCTAssertEqual(db3.origin, .diskCache)
         XCTAssertEqual(db3.entryCount, count1, "New instance should use disk cache")
     }
 
@@ -657,6 +664,7 @@ final class RemoteDatabaseTests: XCTestCase {
 
         // Load should use bundled database (no network)
         let db = try await remote.load()
+        XCTAssertEqual(db.origin, .bundled)
         XCTAssertGreaterThan(db.entryCount, 100_000, "Bundled DB should have entries")
 
         // Still no downloaded cache

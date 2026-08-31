@@ -80,7 +80,7 @@ public enum EmbeddedDatabase {
         guard let url = bundle?.url(forResource: "ip2asn", withExtension: "ultra") else {
             throw Error.resourceNotFound
         }
-        return try UltraCompactDatabase(path: url.path)
+        return try UltraCompactDatabase(path: url.path, origin: .embedded)
     }
 }
 
@@ -280,7 +280,7 @@ public actor RemoteDatabase {
         // Check disk cache (downloaded updates take priority over bundled)
         if FileManager.default.fileExists(atPath: cacheURL.path) {
             do {
-                let db = try UltraCompactDatabase(path: cacheURL.path)
+                let db = try UltraCompactDatabase(path: cacheURL.path, origin: .diskCache)
                 cachedDatabase = db
                 return db
             } catch {
@@ -294,7 +294,7 @@ public actor RemoteDatabase {
         if let bundledPath = bundledDatabasePath,
             FileManager.default.fileExists(atPath: bundledPath)
         {
-            let db = try UltraCompactDatabase(path: bundledPath)
+            let db = try UltraCompactDatabase(path: bundledPath, origin: .bundled)
             cachedDatabase = db
             return db
         }
@@ -493,7 +493,7 @@ public actor RemoteDatabase {
         }
 
         // Validate and parse the database first before writing to disk
-        let db = try UltraCompactDatabase(data: data)
+        let db = try UltraCompactDatabase(data: data, origin: .downloaded)
 
         // Write to disk cache (atomic to prevent corruption)
         try data.write(to: cacheURL, options: .atomic)

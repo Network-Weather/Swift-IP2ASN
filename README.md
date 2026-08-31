@@ -87,6 +87,24 @@ let db = try await IP2ASN.remote(
 Task { try? await IP2ASN.refresh() }
 ```
 
+### Database Identity and Provenance
+
+Every loaded database exposes a stable build identifier, encoded range counts,
+and its runtime origin. Metadata-enabled builds also report when and from which
+source they were generated:
+
+```swift
+let db = try await IP2ASN.remote()
+
+print(db.metadata.buildIdentifier)
+print(db.metadata.generationTimestamp as Any)
+print(db.metadata.sourceIdentifier as Any)
+print(db.origin) // embedded, bundled, diskCache, downloaded, file, or memory
+```
+
+Legacy ULT2 files have `nil` generation and source values because those fields
+were not encoded, but still receive a deterministic build identifier.
+
 The static `IP2ASN` API maintains one active remote configuration. The most
 recent `remote(bundledPath:)` call selects the configuration used by `refresh()`,
 `isCached()`, and `clearCache()`; calling `remote()` with no path selects the
@@ -145,6 +163,7 @@ To build a fresh ultra-compact dual-stack database from the
 non-default refresh cadence):
 
 ```swift
+import Foundation
 import IP2ASNDataPrep
 import SwiftIP2ASN
 
@@ -152,7 +171,11 @@ import SwiftIP2ASN
 try UltraCompactBuilder.createUltraCompact(
     ipv4TSV: "/path/to/ip2asn-v4.tsv",
     ipv6TSV: "/path/to/ip2asn-v6.tsv",
-    to: "/path/to/out.ultra"
+    to: "/path/to/out.ultra",
+    metadata: UltraCompactBuildMetadata(
+        generationTimestamp: Date(timeIntervalSince1970: 1_800_000_000),
+        sourceIdentifier: "iptoasn.com"
+    )
 )
 
 // Load and look up either family
@@ -164,10 +187,16 @@ print(db.lookup("2001:4860:4860::8888")?.asn ?? 0)   // 15169
 The same build is available via the CLI:
 
 ```bash
-ip2asn-tools build-ultra <v4.tsv> [v6.tsv] <out.ultra>
+ip2asn-tools build-ultra \
+  --source iptoasn.com \
+  --generated-at 2027-01-15T08:00:00Z \
+  <v4.tsv> [v6.tsv] <out.ultra>
 ```
 
-Pass only the v4 TSV for an IPv4-only database.
+Pass only the v4 TSV for an IPv4-only database. Omit both metadata options to
+produce the legacy ULT2 layout. Supplying the same normalized TSV inputs,
+generation timestamp, and source identifier produces identical database bytes
+and the same build identifier.
 
 ### CLI Tools
 

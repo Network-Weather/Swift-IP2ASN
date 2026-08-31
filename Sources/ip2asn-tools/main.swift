@@ -20,7 +20,7 @@ func usage() -> Never {
           lookup-compressed <db.cdb> <ip>
           bench-compressed <db.cdb> [iterations]
 
-          build-ultra <v4.tsv> [v6.tsv] <output.ultra>
+          build-ultra [--source <id> --generated-at <ISO-8601>] <v4.tsv> [v6.tsv] <output.ultra>
           lookup-ultra <db.ultra> <ip>
           bench-ultra <db.ultra> [iterations]
         """
@@ -78,9 +78,44 @@ case .benchCompressed:
     report(times: timesC, label: "Compressed load")
 
 case .buildUltra:
-    // build-ultra <v4.tsv> <output.ultra>
-    // build-ultra <v4.tsv> <v6.tsv> <output.ultra>
-    let positional = Array(args.dropFirst())
+    var positional: [String] = []
+    var sourceIdentifier: String?
+    var generationTimestamp: Date?
+    var buildArguments = Array(args)
+    buildArguments.removeFirst()
+    var argumentIndex = 0
+    while argumentIndex < buildArguments.count {
+        let argument = buildArguments[argumentIndex]
+        switch argument {
+        case "--source":
+            argumentIndex += 1
+            guard argumentIndex < buildArguments.count else { usage() }
+            sourceIdentifier = buildArguments[argumentIndex]
+        case "--generated-at":
+            argumentIndex += 1
+            guard argumentIndex < buildArguments.count else { usage() }
+            generationTimestamp = ISO8601DateFormatter().date(from: buildArguments[argumentIndex])
+            guard generationTimestamp != nil else { usage() }
+        default:
+            guard !argument.hasPrefix("--") else { usage() }
+            positional.append(argument)
+        }
+        argumentIndex += 1
+    }
+
+    let metadata: UltraCompactBuildMetadata?
+    switch (generationTimestamp, sourceIdentifier) {
+    case (.none, .none):
+        metadata = nil
+    case (.some(let timestamp), .some(let source)):
+        metadata = UltraCompactBuildMetadata(
+            generationTimestamp: timestamp,
+            sourceIdentifier: source
+        )
+    default:
+        usage()
+    }
+
     let v4Path: String?
     let v6Path: String?
     let outputPath: String
@@ -97,7 +132,12 @@ case .buildUltra:
         usage()
     }
     do {
-        try UltraCompactBuilder.createUltraCompact(ipv4TSV: v4Path, ipv6TSV: v6Path, to: outputPath)
+        try UltraCompactBuilder.createUltraCompact(
+            ipv4TSV: v4Path,
+            ipv6TSV: v6Path,
+            to: outputPath,
+            metadata: metadata
+        )
     } catch {
         fputs("Error: \(error)\n", stderr)
         exit(1)

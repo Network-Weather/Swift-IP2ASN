@@ -124,15 +124,15 @@ guesswork or unnecessary requests.
 
 ### Database metadata
 
-- [ ] Define public `DatabaseMetadata` containing at least the format version,
+- [x] Define public `DatabaseMetadata` containing at least the format version,
       generation timestamp, source identifier, IPv4 and IPv6 range counts, and
       a stable build identifier.
-- [ ] Extend ULT2 additively, using its reserved flags or a compatible trailer,
+- [x] Extend ULT2 additively, using its reserved flags or a compatible trailer,
       so existing 0.4 readers can continue reading new files.
-- [ ] Expose metadata on `UltraCompactDatabase` and distinguish embedded,
+- [x] Expose metadata on `UltraCompactDatabase` and distinguish embedded,
       bundled, disk-cache, and downloaded origins where that distinction is
       meaningful.
-- [ ] Make metadata reproducible: identical normalized inputs and builder
+- [x] Make metadata reproducible: identical normalized inputs and builder
       settings must produce the same build identifier and database bytes.
 
 The source country field may be considered for a later result-format extension,

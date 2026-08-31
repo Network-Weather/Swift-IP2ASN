@@ -1,12 +1,42 @@
 import Compression
 import Foundation
-import SwiftIP2ASN
+@_spi(IP2ASNDataPrep) import SwiftIP2ASN
+
+/// Reproducible provenance settings for a ULT2 metadata trailer.
+public struct UltraCompactBuildMetadata: Equatable, Sendable {
+    /// Generation time. ULT2 stores this at whole-second precision.
+    public let generationTimestamp: Date
+
+    /// Stable identifier for the normalized input source.
+    public let sourceIdentifier: String
+
+    public init(generationTimestamp: Date, sourceIdentifier: String) {
+        self.generationTimestamp = generationTimestamp
+        self.sourceIdentifier = sourceIdentifier
+    }
+}
+
+/// Errors produced while encoding ULT2 build metadata.
+public enum UltraCompactBuilderError: Error, Equatable, Sendable {
+    case invalidGenerationTimestamp
+    case emptySourceIdentifier
+    case sourceIdentifierTooLong
+}
 
 public enum UltraCompactBuilder {
 
     /// Build an ultra-compact (V2) database from an IPv4 TSV. The output contains zero IPv6 ranges.
-    public static func createUltraCompact(from tsvPath: String, to outputPath: String) throws {
-        try createUltraCompact(ipv4TSV: tsvPath, ipv6TSV: nil, to: outputPath)
+    public static func createUltraCompact(
+        from tsvPath: String,
+        to outputPath: String,
+        metadata: UltraCompactBuildMetadata? = nil
+    ) throws {
+        try createUltraCompact(
+            ipv4TSV: tsvPath,
+            ipv6TSV: nil,
+            to: outputPath,
+            metadata: metadata
+        )
     }
 
     /// Build an ultra-compact (V2) dual-stack database from one or both iptoasn TSVs.
@@ -15,7 +45,14 @@ public enum UltraCompactBuilder {
     ///   - ipv4TSV: Path to `ip2asn-v4.tsv`. Optional; pass nil to build IPv6-only.
     ///   - ipv6TSV: Path to `ip2asn-v6.tsv`. Optional; pass nil to build IPv4-only.
     ///   - outputPath: Where to write the zlib-compressed `.ultra` file.
-    public static func createUltraCompact(ipv4TSV: String?, ipv6TSV: String?, to outputPath: String) throws {
+    ///   - metadata: Reproducible provenance to encode, or `nil` for the legacy
+    ///     ULT2 layout without a metadata trailer.
+    public static func createUltraCompact(
+        ipv4TSV: String?,
+        ipv6TSV: String?,
+        to outputPath: String,
+        metadata: UltraCompactBuildMetadata? = nil
+    ) throws {
         precondition(ipv4TSV != nil || ipv6TSV != nil, "Need at least one TSV input")
 
         var v4Ranges: [(start: UInt32, end: UInt32, asn: UInt32)] = []
@@ -60,7 +97,7 @@ public enum UltraCompactBuilder {
         var data = Data()
         data.append(contentsOf: "ULT2".utf8)
         data.append(UltraCompactFormat.currentFormatVersion)  // 1B format version
-        data.append(0)                                         // 1B flags (reserved)
+        data.append(metadata == nil ? 0 : UltraCompactFormat.metadataFlag)
         data.append(uint32LE(UInt32(v4Ranges.count)))
         data.append(uint32LE(UInt32(v6Ranges.count)))
         data.append(uint32LE(UInt32(asnNames.count)))
@@ -86,6 +123,10 @@ public enum UltraCompactBuilder {
             data.append(nd)
         }
 
+        if let metadata {
+            try appendMetadata(metadata, to: &data)
+        }
+
         let compressed = try zlibCompress(data)
         try compressed.write(to: URL(fileURLWithPath: outputPath))
     }
@@ -101,6 +142,27 @@ public enum UltraCompactBuilder {
     private static func uint32LE(_ v: UInt32) -> Data { withUnsafeBytes(of: v.littleEndian) { Data($0) } }
     private static func uint32BE(_ v: UInt32) -> Data { withUnsafeBytes(of: v.bigEndian) { Data($0) } }
     private static func uint64BE(_ v: UInt64) -> Data { withUnsafeBytes(of: v.bigEndian) { Data($0) } }
+    private static func uint64LE(_ v: UInt64) -> Data { withUnsafeBytes(of: v.littleEndian) { Data($0) } }
+
+    private static func appendMetadata(_ metadata: UltraCompactBuildMetadata, to data: inout Data) throws {
+        let timestamp = metadata.generationTimestamp.timeIntervalSince1970
+        guard timestamp.isFinite, timestamp >= 0, timestamp < Double(UInt64.max) else {
+            throw UltraCompactBuilderError.invalidGenerationTimestamp
+        }
+        guard !metadata.sourceIdentifier.isEmpty else {
+            throw UltraCompactBuilderError.emptySourceIdentifier
+        }
+        let sourceData = Data(metadata.sourceIdentifier.utf8)
+        guard let sourceLength = UInt32(exactly: sourceData.count) else {
+            throw UltraCompactBuilderError.sourceIdentifierTooLong
+        }
+
+        data.append(UltraCompactFormat.metadataTrailerMagic)
+        data.append(uint64LE(UInt64(timestamp.rounded(.towardZero))))
+        data.append(encodeVarint(sourceLength))
+        data.append(sourceData)
+        data.append(UltraCompactFormat.buildIdentifierDigest(for: data))
+    }
 
     private static func encodeVarint(_ value: UInt32) -> Data {
         var v = value

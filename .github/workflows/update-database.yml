@@ -26,7 +26,14 @@ jobs:
           curl -sL https://iptoasn.com/data/ip2asn-v6.tsv.gz | gunzip > /tmp/ip2asn-v6.tsv
 
       - name: Build ultra-compact dual-stack database
-        run: .build/release/ip2asn-tools build-ultra /tmp/ip2asn-v4.tsv /tmp/ip2asn-v6.tsv Sources/SwiftIP2ASN/Resources/ip2asn.ultra
+        run: |
+          generated_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          .build/release/ip2asn-tools build-ultra \
+            --source iptoasn.com \
+            --generated-at "$generated_at" \
+            /tmp/ip2asn-v4.tsv \
+            /tmp/ip2asn-v6.tsv \
+            Sources/SwiftIP2ASN/Resources/ip2asn.ultra
 
       - name: Check for changes
         id: diff

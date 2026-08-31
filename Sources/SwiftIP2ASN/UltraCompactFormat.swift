@@ -9,7 +9,7 @@ import Foundation
 /// - Header (18 bytes):
 ///   - 4 bytes: magic `"ULT2"`
 ///   - 1 byte:  format version (matches the magic; currently 2)
-///   - 1 byte:  flags (current: 0; unknown bits ignored by readers)
+///   - 1 byte:  flags (bit 0: metadata trailer; unknown bits ignored)
 ///   - 4 bytes LE: v4 range count
 ///   - 4 bytes LE: v6 range count
 ///   - 4 bytes LE: ASN name-table count
@@ -25,15 +25,24 @@ import Foundation
 ///   - varint: ASN
 ///   - varint: nameLen
 ///   - nameLen bytes: UTF-8 name
+/// - Optional metadata trailer (when flags bit 0 is set):
+///   - 4 bytes: metadata magic `"UMD1"`
+///   - 8 bytes LE: generation time as Unix seconds
+///   - varint: source identifier byte length
+///   - source identifier bytes: UTF-8
+///   - 32 bytes: SHA-256 of all preceding uncompressed bytes
 ///
 /// Forward compatibility: readers verify the magic and reject unknown
-/// format versions. Flag bits are reserved for additive features; readers
-/// should ignore bits they don't understand.
+/// format versions. Readers ignore flag bits they do not understand.
 public enum UltraCompactFormat {
 
     /// Current on-disk format version, matching the magic (`ULT2` → 2).
     /// Bump (and update the magic) when the layout changes.
     public static let currentFormatVersion: UInt8 = 2
+
+    /// Header flag indicating that a version-1 metadata trailer follows the
+    /// ASN name table. Released readers ignore this bit and trailing bytes.
+    public static let metadataFlag: UInt8 = 1 << 0
 
     /// Encode a UInt32 as a variable-length integer (Protocol Buffers style).
     @inlinable
@@ -125,22 +134,36 @@ public struct UltraCompactDatabase: Sendable {
 
     private let asnNames: [UInt32: String]
 
+    /// Encoded build identity and provenance.
+    public let metadata: DatabaseMetadata
+
+    /// Runtime source from which this database instance was loaded.
+    public let origin: DatabaseOrigin
+
     public var entryCount: Int { v4StartIPs.count + v6StartHi.count }
     public var ipv4EntryCount: Int { v4StartIPs.count }
     public var ipv6EntryCount: Int { v6StartHi.count }
     public var uniqueASNCount: Int { asnNames.count }
 
     public init(path: String) throws {
+        try self.init(path: path, origin: .file)
+    }
+
+    init(path: String, origin: DatabaseOrigin) throws {
         let url = URL(fileURLWithPath: path)
         let compressed = try Data(contentsOf: url)
-        try self.init(compressedData: compressed)
+        try self.init(compressedData: compressed, origin: origin)
     }
 
     public init(data: Data) throws {
-        try self.init(compressedData: data)
+        try self.init(data: data, origin: .memory)
     }
 
-    private init(compressedData: Data) throws {
+    init(data: Data, origin: DatabaseOrigin) throws {
+        try self.init(compressedData: data, origin: origin)
+    }
+
+    private init(compressedData: Data, origin: DatabaseOrigin) throws {
         let decompressed = try Self.decompress(compressedData)
 
         guard decompressed.count >= 18 else {
@@ -156,9 +179,9 @@ public struct UltraCompactDatabase: Sendable {
         guard formatVersion == UltraCompactFormat.currentFormatVersion else {
             throw UltraCompactError.unsupportedVersion(formatVersion)
         }
-        // Flags byte at offset 5: ignored today; readers should tolerate unknown
-        // bits so additive flags don't require a version bump.
-        _ = decompressed[5]
+        // Unknown flag bits remain ignored so additive features do not require
+        // a format-version bump.
+        let flags = decompressed[5]
 
         func readUInt32LE(at offset: Int) -> UInt32 {
             return UInt32(decompressed[offset]) | (UInt32(decompressed[offset + 1]) << 8)
@@ -174,6 +197,14 @@ public struct UltraCompactDatabase: Sendable {
             var v: UInt64 = 0
             for i in 0..<8 { v = (v << 8) | UInt64(decompressed[offset + i]) }
             return v
+        }
+
+        func readUInt64LE(at offset: Int) -> UInt64 {
+            var value: UInt64 = 0
+            for index in 0..<8 {
+                value |= UInt64(decompressed[offset + index]) << UInt64(index * 8)
+            }
+            return value
         }
 
         let v4Count = Int(readUInt32LE(at: 6))
@@ -406,6 +437,95 @@ public struct UltraCompactDatabase: Sendable {
             offset += nameLength
         }
 
+        var generationTimestamp: Date?
+        var sourceIdentifier: String?
+        let buildIdentifier: String
+
+        if flags & UltraCompactFormat.metadataFlag != 0 {
+            let magic = UltraCompactFormat.metadataTrailerMagic
+            guard offset + magic.count <= decompressed.count else {
+                throw validationFailed(
+                    section: .metadata,
+                    field: .trailerMagic,
+                    reason: .truncated
+                )
+            }
+            guard decompressed[offset..<offset + magic.count].elementsEqual(magic) else {
+                throw validationFailed(
+                    section: .metadata,
+                    field: .trailerMagic,
+                    reason: .invalidValue
+                )
+            }
+            offset += magic.count
+
+            guard offset + 8 <= decompressed.count else {
+                throw validationFailed(
+                    section: .metadata,
+                    field: .generationTimestamp,
+                    reason: .truncated
+                )
+            }
+            let generatedAtSeconds = readUInt64LE(at: offset)
+            generationTimestamp = Date(timeIntervalSince1970: TimeInterval(generatedAtSeconds))
+            offset += 8
+
+            guard let sourceLength = UltraCompactFormat.decodeVarint(from: decompressed, offset: &offset) else {
+                throw validationFailed(
+                    section: .metadata,
+                    field: .sourceIdentifier,
+                    reason: .malformedVarint
+                )
+            }
+            let sourceByteCount = Int(sourceLength)
+            guard sourceByteCount <= decompressed.count - offset else {
+                throw validationFailed(
+                    section: .metadata,
+                    field: .sourceIdentifier,
+                    reason: .truncated,
+                    value: UInt64(sourceLength)
+                )
+            }
+            let sourceData = decompressed[offset..<offset + sourceByteCount]
+            guard let source = String(data: sourceData, encoding: .utf8) else {
+                throw validationFailed(
+                    section: .metadata,
+                    field: .sourceIdentifier,
+                    reason: .invalidUTF8
+                )
+            }
+            guard !source.isEmpty else {
+                throw validationFailed(
+                    section: .metadata,
+                    field: .sourceIdentifier,
+                    reason: .invalidValue
+                )
+            }
+            sourceIdentifier = source
+            offset += sourceByteCount
+
+            let digestLength = 32
+            guard digestLength <= decompressed.count - offset else {
+                throw validationFailed(
+                    section: .metadata,
+                    field: .buildIdentifier,
+                    reason: .truncated
+                )
+            }
+            let storedDigest = Data(decompressed[offset..<offset + digestLength])
+            let expectedDigest = StableSHA256.digest(Data(decompressed[..<offset]))
+            guard storedDigest == expectedDigest else {
+                throw validationFailed(
+                    section: .metadata,
+                    field: .buildIdentifier,
+                    reason: .invalidValue
+                )
+            }
+            buildIdentifier = storedDigest.map { String(format: "%02x", $0) }.joined()
+        } else {
+            buildIdentifier = StableSHA256.hexDigest(decompressed)
+        }
+
         self.v4StartIPs = v4StartIPs
         self.v4EndIPs = v4EndIPs
         self.v4Asns = v4Asns
@@ -415,6 +535,15 @@ public struct UltraCompactDatabase: Sendable {
         self.v6EndLo = v6EndLo
         self.v6Asns = v6Asns
         self.asnNames = asnNames
+        self.metadata = DatabaseMetadata(
+            formatVersion: formatVersion,
+            generationTimestamp: generationTimestamp,
+            sourceIdentifier: sourceIdentifier,
+            ipv4RangeCount: v4Count,
+            ipv6RangeCount: v6Count,
+            buildIdentifier: buildIdentifier
+        )
+        self.origin = origin
     }
 
     // MARK: - Lookup
@@ -534,6 +663,7 @@ public struct UltraCompactValidationIssue: Equatable, Sendable {
         case ipv4Ranges
         case ipv6Ranges
         case asnNames
+        case metadata
     }
 
     /// Field within the section that failed validation.
@@ -545,6 +675,10 @@ public struct UltraCompactValidationIssue: Equatable, Sendable {
         case asn
         case nameLength
         case name
+        case trailerMagic
+        case generationTimestamp
+        case sourceIdentifier
+        case buildIdentifier
     }
 
     /// Rule violated by the encoded field.
@@ -557,6 +691,7 @@ public struct UltraCompactValidationIssue: Equatable, Sendable {
         case overlappingOrUnsortedRange
         case invalidUTF8
         case duplicateValue
+        case invalidValue
     }
 
     /// Payload section containing the rejected field.
