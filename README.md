@@ -25,7 +25,7 @@ Add the following to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.5.0")
+    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.5.1")
 ]
 ```
 
@@ -214,7 +214,7 @@ print(db.lookup("2001:4860:4860::8888")?.asn ?? 0)   // 15169
 The same build is available via the CLI:
 
 ```bash
-ip2asn-tools build-ultra \
+ip2asn build-ultra \
   --source iptoasn.com \
   --generated-at 2027-01-15T08:00:00Z \
   <v4.tsv> [v6.tsv] <out.ultra>
@@ -237,24 +237,46 @@ signature. Authenticity currently depends on HTTPS plus the repository's
 reviewed update workflow. A future signed-manifest design would require clients
 to pin a public key rather than trusting a signature served from the same origin.
 
-### CLI Tools
+### CLI
 
-An executable `ip2asn-tools` is included for database management:
+The `ip2asn` executable uses the bundled dual-stack database by default:
 
 ```bash
 # Build the tool
 swift build -c release
 
-# Create an ultra-compact database from TSV
-.build/release/ip2asn-tools build-ultra /path/to/ip2asn-v4.tsv output.ultra
+# Lookup is implied when the argument is an IP address
+.build/release/ip2asn 1.1.1.1
+# Output: AS13335 CLOUDFLARENET
 
-# Lookup an IP
-.build/release/ip2asn-tools lookup-ultra output.ultra 8.8.8.8
+# The explicit verb is equivalent and supports a custom database
+.build/release/ip2asn lookup 8.8.8.8
+.build/release/ip2asn lookup 8.8.8.8 --database output.ultra
 # Output: AS15169 GOOGLE
 
-# Benchmark load times
-.build/release/ip2asn-tools bench-ultra output.ultra 5
+# Print stable JSON metadata and artifact checksums
+.build/release/ip2asn inspect
+.build/release/ip2asn inspect --database output.ultra
+
+# Parse and validate the bundled database and provenance manifest
+.build/release/ip2asn validate
+
+# Validate a downloaded or locally built artifact against its manifest
+.build/release/ip2asn validate \
+  --database output.ultra \
+  --manifest ip2asn.manifest.json
 ```
+
+`inspect` and `validate` emit sorted JSON for CI use. `validate` returns a
+nonzero status for a malformed database, invalid manifest, or any mismatch in
+the output digest, build identifier, format, counts, or generation timestamp.
+When a custom database is supplied without a manifest, it performs database
+format validation only.
+
+Database development commands remain available as `build-ultra`,
+`bench-ultra`, and their legacy compressed-format counterparts. The previous
+`ip2asn-tools` executable name and `lookup-ultra` verb remain compatibility
+aliases during the 0.x release line.
 
 ### Working with IP Ranges
 
@@ -286,7 +308,7 @@ The library uses a binary search on sorted contiguous arrays, providing excellen
 
 - **SwiftIP2ASN**: Core library with lookup functionality
 - **IP2ASNDataPrep**: Optional library product for parsing TSV input and building databases
-- **ip2asn-tools**: Executable product for database builds, lookups, and load benchmarks
+- **ip2asn**: Executable product for bundled lookups, artifact diagnostics, database builds, and benchmarks (`ip2asn-tools` remains an alias)
 
 ### Core Components
 

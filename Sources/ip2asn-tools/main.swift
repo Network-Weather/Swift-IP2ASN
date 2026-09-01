@@ -3,6 +3,9 @@ import IP2ASNDataPrep
 import SwiftIP2ASN
 
 enum Command: String {
+    case lookup
+    case inspect
+    case validate
     case buildCompressed = "build-compressed"
     case lookupCompressed = "lookup-compressed"
     case benchCompressed = "bench-compressed"
@@ -11,11 +14,18 @@ enum Command: String {
     case benchUltra = "bench-ultra"
 }
 
-func usage() -> Never {
+func usage(exitCode: Int32 = 2) -> Never {
     let msg = """
-        ip2asn-tools
+        ip2asn
 
         Commands:
+          ip2asn <ip>
+          ip2asn lookup <ip> [--database <db.ultra>]
+          ip2asn inspect [<db.ultra> | --database <db.ultra>]
+          ip2asn validate [<db.ultra> [manifest.json]]
+                          [--database <db.ultra>] [--manifest <manifest.json>]
+
+        Database development commands:
           build-compressed <input.tsv> <output.cdb>
           lookup-compressed <db.cdb> <ip>
           bench-compressed <db.cdb> [iterations]
@@ -28,13 +38,87 @@ func usage() -> Never {
           bench-ultra <db.ultra> [iterations]
         """
     print(msg)
-    exit(2)
+    exit(exitCode)
 }
 
-let args = CommandLine.arguments.dropFirst()
+var suppliedArguments = Array(CommandLine.arguments.dropFirst())
+if suppliedArguments == ["help"] || suppliedArguments == ["--help"]
+    || suppliedArguments == ["-h"]
+{
+    usage(exitCode: 0)
+}
+if let first = suppliedArguments.first, IPAddress(string: first) != nil {
+    suppliedArguments.insert(Command.lookup.rawValue, at: 0)
+}
+let args = suppliedArguments[...]
 guard let cmdRaw = args.first, let cmd = Command(rawValue: cmdRaw) else { usage() }
 
 switch cmd {
+case .lookup:
+    guard let request = parseLookupArguments(Array(args.dropFirst())) else { usage() }
+    do {
+        let database =
+            try request.databasePath.map(UltraCompactDatabase.init(path:))
+            ?? IP2ASN.embedded()
+        guard let result = database.lookup(request.ip) else {
+            print("NOT FOUND")
+            exit(1)
+        }
+        printLookup(result)
+    } catch {
+        fail(error)
+    }
+
+case .inspect:
+    guard
+        let request = parseDiagnosticArguments(
+            Array(args.dropFirst()),
+            allowsManifest: false
+        )
+    else {
+        usage()
+    }
+    do {
+        let databaseURL =
+            try request.databasePath.map(URL.init(fileURLWithPath:))
+            ?? EmbeddedDatabase.ultraCompactURL()
+        let report = try DatabaseArtifactDiagnostics.inspect(databaseURL: databaseURL)
+        try writeJSON(report)
+    } catch {
+        fail(error)
+    }
+
+case .validate:
+    guard
+        let request = parseDiagnosticArguments(
+            Array(args.dropFirst()),
+            allowsManifest: true
+        )
+    else {
+        usage()
+    }
+    do {
+        let usesEmbeddedDatabase = request.databasePath == nil
+        let databaseURL =
+            try request.databasePath.map(URL.init(fileURLWithPath:))
+            ?? EmbeddedDatabase.ultraCompactURL()
+        let manifestURL: URL?
+        if let manifestPath = request.manifestPath {
+            manifestURL = URL(fileURLWithPath: manifestPath)
+        } else if usesEmbeddedDatabase {
+            manifestURL = try EmbeddedDatabase.manifestURL()
+        } else {
+            manifestURL = nil
+        }
+        let report = try DatabaseArtifactDiagnostics.validate(
+            databaseURL: databaseURL,
+            manifestURL: manifestURL
+        )
+        try writeJSON(report)
+    } catch {
+        fail(error)
+    }
+
 case .buildCompressed:
     guard args.count == 3 else { usage() }
     let input = String(args.dropFirst().first!)
@@ -213,7 +297,7 @@ case .lookupUltra:
     do {
         let db = try UltraCompactDatabase(path: dbPath)
         if let r = db.lookup(ip) {
-            print("AS\(r.asn) \(r.name ?? "")")
+            printLookup(r)
         } else {
             print("NOT FOUND")
             exit(1)
@@ -242,6 +326,91 @@ case .benchUltra:
 }
 
 // MARK: - Helpers
+struct LookupRequest {
+    let ip: String
+    let databasePath: String?
+}
+
+struct DiagnosticRequest {
+    let databasePath: String?
+    let manifestPath: String?
+}
+
+func parseLookupArguments(_ arguments: [String]) -> LookupRequest? {
+    var positionals: [String] = []
+    var databasePath: String?
+    var index = 0
+    while index < arguments.count {
+        switch arguments[index] {
+        case "--database":
+            index += 1
+            guard index < arguments.count, databasePath == nil else { return nil }
+            databasePath = arguments[index]
+        default:
+            guard !arguments[index].hasPrefix("--") else { return nil }
+            positionals.append(arguments[index])
+        }
+        index += 1
+    }
+    guard positionals.count == 1, IPAddress(string: positionals[0]) != nil else { return nil }
+    return LookupRequest(ip: positionals[0], databasePath: databasePath)
+}
+
+func parseDiagnosticArguments(
+    _ arguments: [String],
+    allowsManifest: Bool
+) -> DiagnosticRequest? {
+    var positionals: [String] = []
+    var databasePath: String?
+    var manifestPath: String?
+    var index = 0
+    while index < arguments.count {
+        switch arguments[index] {
+        case "--database":
+            index += 1
+            guard index < arguments.count, databasePath == nil else { return nil }
+            databasePath = arguments[index]
+        case "--manifest":
+            guard allowsManifest else { return nil }
+            index += 1
+            guard index < arguments.count, manifestPath == nil else { return nil }
+            manifestPath = arguments[index]
+        default:
+            guard !arguments[index].hasPrefix("--") else { return nil }
+            positionals.append(arguments[index])
+        }
+        index += 1
+    }
+
+    guard positionals.count <= (allowsManifest ? 2 : 1) else { return nil }
+    if let positionalDatabase = positionals.first {
+        guard databasePath == nil else { return nil }
+        databasePath = positionalDatabase
+    }
+    if positionals.count == 2 {
+        guard allowsManifest, manifestPath == nil else { return nil }
+        manifestPath = positionals[1]
+    }
+    return DiagnosticRequest(databasePath: databasePath, manifestPath: manifestPath)
+}
+
+func printLookup(_ result: (asn: UInt32, name: String?)) {
+    if let name = result.name, !name.isEmpty {
+        print("AS\(result.asn) \(name)")
+    } else {
+        print("AS\(result.asn)")
+    }
+}
+
+func writeJSON<T: Encodable>(_ value: T) throws {
+    FileHandle.standardOutput.write(try DatabaseArtifactDiagnostics.encodedJSON(value))
+}
+
+func fail(_ error: Error) -> Never {
+    fputs("Error: \(error)\n", stderr)
+    exit(1)
+}
+
 func report(times: [Double], label: String) {
     guard !times.isEmpty else { return }
     let avg = times.reduce(0, +) / Double(times.count)

@@ -77,10 +77,22 @@ public enum EmbeddedDatabase {
     /// print("Covering \(db.uniqueASNCount) unique ASNs")
     /// ```
     public static func loadUltraCompact(from bundle: Bundle? = .safeModule) throws -> UltraCompactDatabase {
+        let url = try ultraCompactURL(from: bundle)
+        return try UltraCompactDatabase(path: url.path, origin: .embedded)
+    }
+
+    package static func ultraCompactURL(from bundle: Bundle? = .safeModule) throws -> URL {
         guard let url = bundle?.url(forResource: "ip2asn", withExtension: "ultra") else {
             throw Error.resourceNotFound
         }
-        return try UltraCompactDatabase(path: url.path, origin: .embedded)
+        return url
+    }
+
+    package static func manifestURL(from bundle: Bundle? = .safeModule) throws -> URL {
+        guard let url = bundle?.url(forResource: "ip2asn.manifest", withExtension: "json") else {
+            throw Error.resourceNotFound
+        }
+        return url
     }
 }
 

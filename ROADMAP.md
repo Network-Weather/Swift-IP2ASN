@@ -9,7 +9,7 @@ work should land before feature or platform expansion.
 
 ## Current Baseline
 
-SwiftIP2ASN 0.5.0 provides:
+SwiftIP2ASN 0.5.1 provides:
 
 - offline IPv4 and IPv6 ASN lookups from an embedded database;
 - the ULT2 ultra-compact database format and builder;
@@ -18,7 +18,8 @@ SwiftIP2ASN 0.5.0 provides:
 - reproducible database metadata and machine-readable provenance manifests;
 - an actor-based remote database with persistent caching, conditional refresh,
   and observable status;
-- a command-line tool for building, querying, and benchmarking databases;
+- an `ip2asn` command-line tool for bundled lookups, artifact inspection and
+  validation, database builds, and benchmarks;
 - weekly embedded-database update automation and reviewed R2 publication; and
 - SwiftPM support for current Apple platforms.
 
@@ -86,8 +87,6 @@ of this milestone.
       on large source files.
 - [ ] Produce a build summary containing counts, skipped-row reasons, metadata,
       and output digest.
-- [ ] Add a validation/inspection CLI command suitable for CI and hosted
-      artifact diagnostics.
 - [ ] Make invalid arguments and malformed input return stable, actionable
       errors rather than precondition failures.
 

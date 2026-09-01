@@ -50,7 +50,7 @@ struct DatabaseBuildManifestTests {
 
         #expect(manifest.schemaVersion == 1)
         #expect(manifest.generatedAt == generatedAt)
-        #expect(manifest.builder.name == "Swift-IP2ASN/ip2asn-tools")
+        #expect(manifest.builder.name == "Swift-IP2ASN/ip2asn")
         #expect(manifest.builder.version == "test-revision")
         #expect(manifest.sources.count == 1)
         #expect(manifest.sources[0].url == "https://iptoasn.com/data/ip2asn-v4.tsv.gz")

@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-31
+
+### Added
+- An `ip2asn` executable product with zero-configuration bundled IPv4 and IPv6
+  lookups. `lookup` is explicit or implied when the first argument is an IP
+  address.
+- `ip2asn inspect` for deterministic JSON metadata, range counts, database
+  identity, byte count, and SHA-256 output.
+- `ip2asn validate` for complete ULT2 parsing and optional provenance-manifest
+  verification, with nonzero status and actionable mismatch diagnostics for CI.
+- Unit and executable integration coverage for artifact inspection, manifest
+  rejection, bare-IP lookup, and bundled validation.
+
+### Changed
+- The new `ip2asn` command and concise verbs are the documented CLI interface.
+  The `ip2asn-tools` product and format-specific verbs remain compatibility
+  aliases during the 0.x release line.
+- New build manifests identify their builder as `Swift-IP2ASN/ip2asn`.
+
 ## [0.5.0] - 2026-08-31
 
 ### Breaking

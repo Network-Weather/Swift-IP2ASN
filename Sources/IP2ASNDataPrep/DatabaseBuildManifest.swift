@@ -86,7 +86,7 @@ public struct DatabaseBuildManifest: Codable, Equatable, Sendable {
             schemaVersion: currentSchemaVersion,
             generatedAt: generatedAt,
             builder: Builder(
-                name: "Swift-IP2ASN/ip2asn-tools",
+                name: "Swift-IP2ASN/ip2asn",
                 version: builderVersion
             ),
             sources: sources,

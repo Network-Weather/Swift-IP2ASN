@@ -31,16 +31,20 @@ swift package --allow-writing-to-directory docs-out \
 swift build -c release
 
 # Build ultra-compact database from TSV
-.build/release/ip2asn-tools build-ultra /path/to/ip2asn-v4.tsv output.ultra
+.build/release/ip2asn build-ultra /path/to/ip2asn-v4.tsv output.ultra
 
 # Build compressed database from TSV
-.build/release/ip2asn-tools build-compressed /path/to/ip2asn-v4.tsv output.cdb
+.build/release/ip2asn build-compressed /path/to/ip2asn-v4.tsv output.cdb
 
-# Lookup IP address
-.build/release/ip2asn-tools lookup-compressed /path/to/db.cdb 8.8.8.8
+# Lookup an IP address with the bundled database
+.build/release/ip2asn 8.8.8.8
+
+# Inspect or validate bundled artifacts
+.build/release/ip2asn inspect
+.build/release/ip2asn validate
 
 # Benchmark load times
-.build/release/ip2asn-tools bench-ultra /path/to/db.ultra 5
+.build/release/ip2asn bench-ultra /path/to/db.ultra 5
 ```
 
 ## Architecture
@@ -63,7 +67,9 @@ This is a Swift 6 library for IP-to-ASN lookups via a precomputed ultra-compact 
 - `UltraCompactBuilder.swift` - Builds `.ultra` format databases from iptoasn TSV
 - `CompressedDatabaseBuilder.swift` - Builds `.cdb` format databases from TSV
 
-**ip2asn-tools** (CLI) - Command-line interface for build/lookup/benchmark.
+**ip2asn** (CLI) - Command-line interface for bundled lookups, artifact
+inspection/validation, builds, and benchmarks. `ip2asn-tools` remains a
+compatibility alias during 0.x.
 
 ### Database Formats
 
