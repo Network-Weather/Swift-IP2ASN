@@ -404,6 +404,6 @@ https://github.com/Network-Weather/swift-ip2asn
 
 - [ROADMAP.md](ROADMAP.md): product direction, principles, and the ordered milestones toward 1.0. (updated 2026-11-02; update when: a milestone ships or its scope changes)
 - [CHANGELOG.md](CHANGELOG.md): user-visible changes in each tagged release. (updated 2026-11-02; update when: a release is tagged)
-- [CONTRIBUTING.md](CONTRIBUTING.md): development setup, code and test style, PR process, and the maintainer database publication steps. (updated 2026-08-31; update when: the build, test, or publication procedure changes)
+- [CONTRIBUTING.md](CONTRIBUTING.md): development setup, code and test style, PR process, and the automated database publication and rollback. (updated 2026-11-02; update when: the build, test, or publication procedure changes)
 - [CLAUDE.md](CLAUDE.md): build commands, module layout, formats, and coding patterns for agents working in this repo. (updated 2026-08-31; update when: a module, format, or build command is added or removed)
 - [SwiftIP2ASN.docc/SwiftIP2ASN.md](Sources/SwiftIP2ASN/SwiftIP2ASN.docc/SwiftIP2ASN.md): DocC landing page for the library's API documentation. (updated 2026-08-31; update when: the public API surface changes)

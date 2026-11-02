@@ -89,4 +89,4 @@ compatibility alias during 0.x.
 - **Byte-by-byte parsing**: Avoid `withUnsafeBytes.load()` on unaligned offsets; use manual byte extraction.
 - **IPv4 lookups**: O(log n) binary search on parallel `[UInt32]` start/end arrays.
 - **IPv6 lookups**: O(log n) binary search on parallel `[UInt64]` (hi, lo) arrays; addresses compared lexicographically via `compare128`.
-- Most tests run offline; the auto-update workflow runs the full suite against a freshly built dual-stack DB before opening its PR.
+- Most tests run offline. The auto-update workflow runs the full suite against a freshly built dual-stack DB, with `SourceOracleTests` required to check every source TSV row; it then opens a PR, dispatches CI on it, merges, and publishes to R2 (see CONTRIBUTING.md).
