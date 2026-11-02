@@ -29,13 +29,30 @@ jobs:
   publish:
     runs-on: macos-latest
     steps:
-      - name: Checkout
+      # The publisher comes from this workflow's own revision; only the
+      # database and manifest come from `ref`, so rolling back to a commit
+      # that predates the current script still uses the current script.
+      - name: Checkout publisher
+        uses: actions/checkout@v6
+
+      - name: Checkout artifacts to publish
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
+          path: artifact-source
+          sparse-checkout: Sources/SwiftIP2ASN/Resources
+          sparse-checkout-cone-mode: true
+
+      - name: Verify artifacts
+        env:
+          IP2ASN_DATABASE_PATH: artifact-source/Sources/SwiftIP2ASN/Resources/ip2asn.ultra
+          IP2ASN_MANIFEST_PATH: artifact-source/Sources/SwiftIP2ASN/Resources/ip2asn.manifest.json
+        run: Scripts/publish-database.sh verify
 
       - name: Publish to R2 and verify through the CDN
         env:
+          IP2ASN_DATABASE_PATH: artifact-source/Sources/SwiftIP2ASN/Resources/ip2asn.ultra
+          IP2ASN_MANIFEST_PATH: artifact-source/Sources/SwiftIP2ASN/Resources/ip2asn.manifest.json
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
