@@ -13,7 +13,13 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - The weekly database update now runs CI on its pull request, merges it when
   CI passes, and publishes the merged database to the CDN without a manual
-  step.
+  step. Publishing lives in `publish-database.yml`, which can also be
+  dispatched by hand to publish or roll back any commit's database.
+- `Scripts/publish-database.sh` uploads over R2's S3 API when
+  `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_ENDPOINT` are set, and
+  now fails unless the CDN serves exactly the uploaded pair. Previously a
+  failed upload could pass, because only the served pair's internal
+  consistency was checked.
 
 ### Removed
 - `RandomIPVerificationTest`, which was unconditionally skipped and asserted

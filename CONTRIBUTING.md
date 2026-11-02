@@ -197,11 +197,16 @@ dispatches CI on that pull request, merges it when CI passes, and publishes the
 merged pair to R2. Any failed gate stops the run before merge or publication
 and marks the workflow failed.
 
-Publication from CI needs two repository secrets: `CLOUDFLARE_ACCOUNT_ID` and
-`CLOUDFLARE_R2_PUBLISH_TOKEN`, an API token limited to object writes on the
-`networkweather-pkgs` bucket.
+Publication runs in `publish-database.yml`, which uploads over R2's S3 API and
+needs three repository secrets from an R2 API token with object read and write
+on the `networkweather-pkgs` bucket: `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+and `R2_ENDPOINT` (`https://<account-id>.r2.cloudflarestorage.com`). The
+publish step fails until the CDN serves exactly the uploaded pair, allowing
+for its 300-second cache.
 
-To roll back a bad publication, publish the previous commit's pair:
+To roll back a bad publication, dispatch `publish-database.yml` with `ref` set
+to the last good commit, or publish that commit's pair from a maintainer
+machine:
 
 ```bash
 git show <previous-commit>:Sources/SwiftIP2ASN/Resources/ip2asn.ultra > /path/to/rollback/ip2asn.ultra
@@ -217,9 +222,9 @@ To publish by hand, verify the committed pair locally:
 Scripts/publish-database.sh verify
 ```
 
-Publishing requires an authenticated Wrangler 4.x session with object-write
-access to the production `networkweather-pkgs` R2 bucket. Publication is an
-explicit operation:
+With the `R2_*` variables above set, the script uploads with the `aws` CLI;
+otherwise it uses an authenticated Wrangler 4.x session with object-write
+access to the production `networkweather-pkgs` R2 bucket:
 
 ```bash
 Scripts/publish-database.sh publish
@@ -227,7 +232,8 @@ Scripts/publish-database.sh publish
 
 The script validates the local digest and byte count before upload, publishes
 the database before its manifest, downloads both through
-`pkgs.networkweather.com`, validates them again, and requires a conditional
+`pkgs.networkweather.com` until they match the uploaded bytes exactly,
+validates them again, and requires a conditional
 database request to return `304 Not Modified`.
 
 ## License
