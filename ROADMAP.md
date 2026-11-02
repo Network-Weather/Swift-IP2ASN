@@ -9,7 +9,7 @@ work should land before feature or platform expansion.
 
 ## Current Baseline
 
-SwiftIP2ASN 0.5.1 provides:
+SwiftIP2ASN 0.5.2 provides:
 
 - offline IPv4 and IPv6 ASN lookups from an embedded database;
 - the ULT2 ultra-compact database format and builder;

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-02
+
+### Changed
+- Embedded database refreshed from iptoasn data of 2026-11-02 (459,655 IPv4
+  and 119,798 IPv6 ranges, 86,901 ASNs; previously 2026-08-31).
+
+### Fixed
+- The weekly database update no longer fails when upstream renames an AS. The
+  CLI integration test now asserts the ASN and output shape instead of the
+  free-text AS name (AS13335 is now "CLOUDFLARENET - Cloudflare, Inc.").
+
 ## [0.5.1] - 2026-08-31
 
 ### Added
