@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- `SourceOracleTests`: checks the first and last address of every IPv4 and
+  IPv6 source row against the bundled database, when the manifest's exact
+  builder inputs are available (`IP2ASN_SOURCE_DIR`). The update workflow
+  requires it to run.
+
+### Changed
+- The weekly database update now runs CI on its pull request, merges it when
+  CI passes, and publishes the merged database to the CDN without a manual
+  step.
+
+### Removed
+- `RandomIPVerificationTest`, which was unconditionally skipped and asserted
+  nothing.
+
 ## [0.5.2] - 2026-11-02
 
 ### Changed

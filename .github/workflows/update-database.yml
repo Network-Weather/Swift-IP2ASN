@@ -12,13 +12,21 @@ on:
         default: false
         type: boolean
 
+# The PR is opened with GITHUB_TOKEN, which does not trigger ci.yml on its own,
+# so this workflow dispatches CI on the PR head (workflow_dispatch is the one
+# event GITHUB_TOKEN may trigger), waits for it, merges, and publishes the
+# merged database to the CDN. Every gate is machine-run; recovery from a bad
+# publish is republishing the previous commit's pair (see CONTRIBUTING.md).
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
 jobs:
   update-database:
     runs-on: macos-latest
+    outputs:
+      merge_sha: ${{ steps.merge.outputs.merge_sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -113,9 +121,14 @@ jobs:
         if: steps.diff.outputs.changed == 'true'
         env:
           IP2ASN_RUN_FORMAT_TESTS: 1
+          # Check every source row against the new database; fail rather than
+          # skip if the TSVs above are not the manifest's builder inputs.
+          IP2ASN_SOURCE_DIR: /tmp
+          IP2ASN_REQUIRE_SOURCE_ORACLE: 1
         run: swift test
 
       - name: Create Pull Request
+        id: cpr
         if: steps.diff.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
@@ -136,5 +149,68 @@ jobs:
 
             The machine-readable manifest records source URLs, downloaded and
             decompressed input digests, builder revision, output digest, counts,
-            and generation time. Full `swift test` passes with the new database.
+            and generation time. Full `swift test` passes with the new database,
+            including a check of every source row against it. This workflow
+            runs CI on this PR, merges it when CI passes, and publishes the
+            merged database to the CDN.
           delete-branch: true
+
+      - name: Run CI on the update PR
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.cpr.outputs.pull-request-head-sha }}
+          BRANCH: chore/auto-update-database
+        run: |
+          gh workflow run ci.yml --ref "$BRANCH"
+          run_id=""
+          for _ in $(seq 1 30); do
+            run_id=$(gh run list --workflow ci.yml --event workflow_dispatch --branch "$BRANCH" \
+              --json databaseId,headSha --jq "map(select(.headSha == \"$HEAD_SHA\"))[0].databaseId // empty")
+            [[ -n "$run_id" ]] && break
+            sleep 10
+          done
+          if [[ -z "$run_id" ]]; then
+            echo "::error::Dispatched CI run for $HEAD_SHA never appeared."
+            exit 1
+          fi
+          echo "Watching CI run $run_id"
+          gh run watch "$run_id" --exit-status --interval 30 > /dev/null
+
+      - name: Merge the update PR
+        id: merge
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
+          HEAD_SHA: ${{ steps.cpr.outputs.pull-request-head-sha }}
+        run: |
+          gh pr merge "$PR_NUMBER" --merge --match-head-commit "$HEAD_SHA"
+          merge_sha=$(gh pr view "$PR_NUMBER" --json mergeCommit --jq .mergeCommit.oid)
+          echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
+
+  publish-database:
+    needs: update-database
+    if: needs.update-database.outputs.merge_sha != ''
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout merged database
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.update-database.outputs.merge_sha }}
+
+      - name: Install Wrangler
+        run: npm install --global wrangler@4
+
+      - name: Publish to R2 and verify through the CDN
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_PUBLISH_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "::error::CLOUDFLARE_R2_PUBLISH_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets are required to publish; the merged database is not on the CDN."
+            exit 1
+          fi
+          Scripts/publish-database.sh publish

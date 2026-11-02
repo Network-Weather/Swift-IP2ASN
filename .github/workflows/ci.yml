@@ -3,6 +3,9 @@ name: CI
 on:
   push:
   pull_request:
+  # Dispatched by update-database.yml, whose GITHUB_TOKEN-created PRs do not
+  # trigger push or pull_request runs.
+  workflow_dispatch:
 
 jobs:
   build-test:

@@ -189,9 +189,29 @@ If you find a security vulnerability, please do not open a public issue. Instead
 
 ## Maintainer Database Publication
 
-The database update workflow opens a pull request containing both
-`ip2asn.ultra` and `ip2asn.manifest.json`. After that pull request is reviewed,
-tested, and merged, verify the committed pair locally:
+The weekly database update workflow is unattended end to end. It builds
+`ip2asn.ultra` and `ip2asn.manifest.json`, checks the ±20% size and range-count
+thresholds, runs the full suite (including `SourceOracleTests`, which checks
+every source row against the new database), and opens a pull request. It then
+dispatches CI on that pull request, merges it when CI passes, and publishes the
+merged pair to R2. Any failed gate stops the run before merge or publication
+and marks the workflow failed.
+
+Publication from CI needs two repository secrets: `CLOUDFLARE_ACCOUNT_ID` and
+`CLOUDFLARE_R2_PUBLISH_TOKEN`, an API token limited to object writes on the
+`networkweather-pkgs` bucket.
+
+To roll back a bad publication, publish the previous commit's pair:
+
+```bash
+git show <previous-commit>:Sources/SwiftIP2ASN/Resources/ip2asn.ultra > /path/to/rollback/ip2asn.ultra
+git show <previous-commit>:Sources/SwiftIP2ASN/Resources/ip2asn.manifest.json > /path/to/rollback/ip2asn.manifest.json
+IP2ASN_DATABASE_PATH=/path/to/rollback/ip2asn.ultra \
+IP2ASN_MANIFEST_PATH=/path/to/rollback/ip2asn.manifest.json \
+  Scripts/publish-database.sh publish
+```
+
+To publish by hand, verify the committed pair locally:
 
 ```bash
 Scripts/publish-database.sh verify
