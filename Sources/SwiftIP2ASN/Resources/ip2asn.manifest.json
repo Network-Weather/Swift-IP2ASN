@@ -1,42 +1,42 @@
 {
   "builder" : {
-    "name" : "Swift-IP2ASN/ip2asn-tools",
-    "version" : "9cd9d4df7678ab7d33a54c10155fe34a789d941b"
+    "name" : "Swift-IP2ASN/ip2asn",
+    "version" : "5065ac3e1a4a30be3860f04a18da328dda5c8c52"
   },
-  "generatedAt" : "2026-08-31T23:16:51Z",
+  "generatedAt" : "2026-11-02T16:54:33Z",
   "output" : {
     "artifact" : {
-      "byteCount" : 4233683,
-      "sha256" : "bca0f3abc36fb787baf6a86d70bc0b5d20fbbd90b33ba0b4ba0a3abea7d85137"
+      "byteCount" : 4842907,
+      "sha256" : "7d9e3125e59ce7afcbfd7b7c4602e01a52624e4949f9c4398b9a0f9aadb2017a"
     },
-    "buildIdentifier" : "2d9bf725d1c9f7bb214e3dc8403b193e533a58ddf14d7c4ed0f28369c789565c",
+    "buildIdentifier" : "124ffcb5c79e98ad6b776c2edca2368b8a4394b7d4f42f256207a820acfccf54",
     "fileName" : "ip2asn.ultra",
     "formatVersion" : 2,
-    "ipv4RangeCount" : 455832,
-    "ipv6RangeCount" : 121752,
-    "uniqueASNCount" : 86833
+    "ipv4RangeCount" : 459655,
+    "ipv6RangeCount" : 119798,
+    "uniqueASNCount" : 86901
   },
   "schemaVersion" : 1,
   "sources" : [
     {
       "builderInput" : {
-        "byteCount" : 30349117,
-        "sha256" : "43a0e2ff7d8c90a68df7ebd64ca21eb2099525f0f7c5dbee459ed7c3bc14bafb"
+        "byteCount" : 38211071,
+        "sha256" : "67d5b00cf3e0c73d3bf32918b9daa212cbd5abd301d1e70a4f0d49f12add6328"
       },
       "downloadedArtifact" : {
-        "byteCount" : 6947076,
-        "sha256" : "52b72f0e17702863cd7de833d6a6073fdcb29eb31c0151d942941cb3fc2fad6c"
+        "byteCount" : 8697031,
+        "sha256" : "b881d19d4918552e5dca17ec0ee327d4b3873d629799063b575efb002c6dcd90"
       },
       "url" : "https://iptoasn.com/data/ip2asn-v4.tsv.gz"
     },
     {
       "builderInput" : {
-        "byteCount" : 15069844,
-        "sha256" : "2e45ec60871b849de92859f312d9e3cb8156b1a1a447efa90c22b7e35d4dde57"
+        "byteCount" : 16644775,
+        "sha256" : "1f8757538811bb3cc8dbf8d53b3f1ca7f61c587ccf470c31d54e89baebc45c12"
       },
       "downloadedArtifact" : {
-        "byteCount" : 1990618,
-        "sha256" : "fd89d5c0d8123ded749c14e627f6f35d84749ffb7ec9ae519417de7c4300abd2"
+        "byteCount" : 2258661,
+        "sha256" : "fcb95a83b58114873c87fdad6a92807c50818acc22df8b2c7a8bb00871907495"
       },
       "url" : "https://iptoasn.com/data/ip2asn-v6.tsv.gz"
     }
