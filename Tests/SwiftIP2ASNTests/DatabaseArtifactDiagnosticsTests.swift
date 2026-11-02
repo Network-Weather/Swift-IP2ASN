@@ -105,14 +105,18 @@ struct DatabaseArtifactDiagnosticsTests {
         #expect(help.status == 0)
         #expect(help.stdout.contains("ip2asn lookup <ip>"))
 
+        // The bundled database is refreshed weekly from upstream, whose AS
+        // names are free text that changes (e.g. "CLOUDFLARENET" became
+        // "CLOUDFLARENET - Cloudflare, Inc."). Pin the ASN and output shape,
+        // not the name.
         let lookup = try runCLI(["1.1.1.1"])
         #expect(lookup.status == 0)
-        #expect(lookup.stdout == "AS13335 CLOUDFLARENET\n")
+        expectSingleASNLine(lookup.stdout, asn: 13335)
         #expect(lookup.stderr.isEmpty)
 
         let explicitLookup = try runCLI(["lookup", "2606:4700:4700::1111"])
         #expect(explicitLookup.status == 0)
-        #expect(explicitLookup.stdout == "AS13335 CLOUDFLARENET\n")
+        expectSingleASNLine(explicitLookup.stdout, asn: 13335)
 
         let inspection = try runCLI(["inspect"])
         #expect(inspection.status == 0)
@@ -130,6 +134,20 @@ struct DatabaseArtifactDiagnosticsTests {
         )
         #expect(object["valid"] as? Bool == true)
         #expect(object["manifestValidated"] as? Bool == true)
+    }
+
+    private func expectSingleASNLine(
+        _ output: String,
+        asn: UInt32,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        #expect(output.hasPrefix("AS\(asn) "), sourceLocation: sourceLocation)
+        #expect(output.hasSuffix("\n"), sourceLocation: sourceLocation)
+        #expect(
+            output.dropLast().contains("\n") == false,
+            sourceLocation: sourceLocation
+        )
+        #expect(output.count > "AS\(asn) \n".count, sourceLocation: sourceLocation)
     }
 
     private struct Fixture {
