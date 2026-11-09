@@ -1,15 +1,15 @@
 {
   "builder" : {
     "name" : "Swift-IP2ASN/ip2asn",
-    "version" : "590f6f6f2fbe0d9782392c8176866eb448f8d830"
+    "version" : "c40f88772ab8e80190a3ba4533a807c8445ccce2"
   },
-  "generatedAt" : "2026-11-02T17:50:46Z",
+  "generatedAt" : "2026-11-09T14:37:23Z",
   "output" : {
     "artifact" : {
-      "byteCount" : 4842905,
-      "sha256" : "00ba3204a1c54221c168f6adeb628ffe685e9e3af0d45e0434eb5dba3a04fb26"
+      "byteCount" : 4842908,
+      "sha256" : "98608dc2fb4cfd0485e8a4243063a6b3926fc69ae1199e8eb83b66adf26ceb3a"
     },
-    "buildIdentifier" : "3f510f116456c74aba3eb6315421c2b43cac5019eec8ed75a0732cc4b299c74d",
+    "buildIdentifier" : "06f916b0d659fffcfbe21e6372bda943478ce9665efd6c0b210318b46d255688",
     "fileName" : "ip2asn.ultra",
     "formatVersion" : 2,
     "ipv4RangeCount" : 459655,
