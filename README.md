@@ -29,6 +29,13 @@ dependencies: [
 ]
 ```
 
+### Upgrading from 0.5.x
+
+Existing lookup calls, ULT2 files, and on-disk caches work with 0.6.0. If you
+build from custom TSVs, the builder now stops on malformed rows, and
+`ip2asn build-ultra` writes a JSON report to stdout.
+[0.6.0 upgrade guide](https://ip2asn.networkweather.com/documentation/swiftip2asn/upgradingto060/)
+
 ## Quick Start
 
 ### Simple API (Recommended)

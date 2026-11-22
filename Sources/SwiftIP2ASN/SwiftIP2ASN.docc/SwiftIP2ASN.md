@@ -113,6 +113,10 @@ keep input order, duplicates, and a `nil` at each miss.
 
 ## Topics
 
+### Upgrade guides
+
+- <doc:UpgradingTo060>
+
 ### Essentials
 
 - ``IP2ASN``
@@ -145,8 +149,8 @@ keep input order, duplicates, and a `nil` at each miss.
 ## Data Sources
 
 The database is sourced from [iptoasn.com](https://iptoasn.com), which aggregates
-BGP routing data from global route collectors. The hosted database at
-`pkgs.networkweather.com` is updated daily.
+BGP routing data from global route collectors. The weekly update checks both source TSVs and publishes a new database and
+manifest to `pkgs.networkweather.com` when either source changes.
 
 ## Requirements
 
