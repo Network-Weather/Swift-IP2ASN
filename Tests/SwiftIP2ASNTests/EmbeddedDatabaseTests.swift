@@ -297,6 +297,10 @@ private actor StubRemoteDatabaseHTTPTransport: RemoteDatabaseHTTPTransport {
         return (statusCode == 304 ? Data() : configuration.databaseData, response)
     }
 
+    func requestedCachePolicies() -> [URLRequest.CachePolicy] {
+        requests.map(\.cachePolicy)
+    }
+
     func requestedMethods() -> [String] {
         requests.map { $0.httpMethod ?? "GET" }
     }
@@ -517,6 +521,8 @@ final class RemoteDatabaseTests: XCTestCase {
         }
         let requestedMethods = await transport.requestedMethods()
         XCTAssertEqual(requestedMethods, ["GET", "GET"])
+        let policies = await transport.requestedCachePolicies()
+        XCTAssertEqual(policies, [.reloadIgnoringLocalCacheData, .reloadIgnoringLocalCacheData])
         let etags = await transport.requestedHeaderValues(for: "If-None-Match")
         let modifiedDates = await transport.requestedHeaderValues(for: "If-Modified-Since")
         XCTAssertEqual(etags, [nil, "\"fixture-v1\""])

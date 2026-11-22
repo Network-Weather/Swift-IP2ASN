@@ -189,12 +189,19 @@ If you find a security vulnerability, please do not open a public issue. Instead
 
 ## Maintainer Database Publication
 
-The weekly database update workflow is unattended end to end. It builds
+The weekly workflow compares the SHA-256 of each downloaded, decompressed TSV
+with the bundled manifest. If both match, it finishes without changing the
+generation timestamp or publishing a new pair. Select `force_rebuild` on a
+manual dispatch to rebuild the same data after a builder change.
+
+When a rebuild is needed, the workflow builds
 `ip2asn.ultra` and `ip2asn.manifest.json`, checks the ±20% size and range-count
 thresholds, runs the full suite (including `SourceOracleTests`, which checks
 every source row against the new database), and opens a pull request. It then
 dispatches CI on that pull request, merges it when CI passes, and publishes the
-merged pair to R2. Any failed gate stops the run before merge or publication
+merged pair to R2. For a bot-created PR, GitHub can also show a separate
+`pull_request` run that expires waiting for approval. The merge gate watches
+the explicitly dispatched CI run on the PR head SHA. Any failed gate stops the run before merge or publication
 and marks the workflow failed.
 
 Publication runs in `publish-database.yml`, which uploads over R2's S3 API and
@@ -203,6 +210,10 @@ on the `networkweather-pkgs` bucket: `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
 and `R2_ENDPOINT` (`https://<account-id>.r2.cloudflarestorage.com`). The
 publish step fails until the CDN serves exactly the uploaded pair, allowing
 for its 300-second cache.
+
+If a database merge succeeds and publication fails, dispatch
+`publish-database.yml` with `ref` set to that merge commit to retry the
+same database and manifest. The weekly job skips unchanged source data.
 
 To roll back a bad publication, dispatch `publish-database.yml` with `ref` set
 to the last good commit, or publish that commit's pair from a maintainer

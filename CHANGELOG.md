@@ -2,15 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.6.0] - 2026-11-22
 
 ### Added
+- `ip2asn build-ultra` emits a sorted JSON report with input and skipped-row
+  counts, IPv4 and IPv6 range counts, metadata, and the compressed file’s SHA-256.
 - `SourceOracleTests`: checks the first and last address of every IPv4 and
   IPv6 source row against the bundled database, when the manifest's exact
   builder inputs are available (`IP2ASN_SOURCE_DIR`). The update workflow
   requires it to run.
 
 ### Changed
+- The ULT2 builder streams UTF-8 TSV rows and hashes manifest inputs in chunks.
+  It still sorts ranges in memory. Blank lines and ASN 0 rows are counted and
+  skipped. Previously ignored malformed rows now fail the build with a path,
+  line number, and reason. Each input row can contain up to 1 MiB.
+- The weekly workflow skips rebuilding when both normalized source digests
+  match the bundled manifest. Maintainers can request a rebuild manually.
+- The bundled database was generated November 16, 2026. On November 21,
+  both upstream TSV digests and the hosted artifact matched the bundled manifest.
 - The weekly database update now runs CI on its pull request, merges it when
   CI passes, and publishes the merged database to the CDN without a manual
   step. Publishing lives in `publish-database.yml`, which can also be
@@ -20,6 +30,20 @@ All notable changes to this project will be documented in this file.
   now fails unless the CDN serves exactly the uploaded pair. Previously a
   failed upload could pass, because only the served pair's internal
   consistency was checked.
+
+### Fixed
+- Remote downloads and conditional refreshes bypass URLSession’s local HTTP
+  cache. The library uses its validated database on disk and sends its own
+  validators to the CDN. This fixed a warm-cache live refresh returning HTTP 404.
+- The ULT2 builder rejects invalid IPv4 octets, malformed ASNs, reversed
+  ranges, and overlapping routed ranges before replacing the output. Supplying
+  neither address family throws a recoverable error.
+- ULT2 loading retries when a highly compressible payload fills its decode
+  buffer, so valid names and metadata survive decoding.
+- CIDR containment handles partial-byte prefixes such as IPv4 /25 and IPv6
+  /127. Invalid bit indices and out-of-range prefix lengths return false.
+- Both CLI benchmark commands report invalid iteration counts and database
+  load errors with a diagnostic and a nonzero exit status.
 
 ### Removed
 - `RandomIPVerificationTest`, which was unconditionally skipped and asserted

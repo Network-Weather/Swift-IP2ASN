@@ -42,14 +42,14 @@ public enum IPAddress: Sendable, Hashable {
     public func getBit(at index: Int) -> Bool {
         switch self {
         case .v4(let addr):
-            guard index < 32 else { return false }
+            guard (0..<32).contains(index) else { return false }
             let data = addr.rawValue
             let byteIndex = index >> 3  // index / 8
             let bitIndex = 7 - (index & 7)  // 7 - (index % 8)
             return (data[byteIndex] & (1 << bitIndex)) != 0
 
         case .v6(let addr):
-            guard index < 128 else { return false }
+            guard (0..<128).contains(index) else { return false }
             let data = addr.rawValue
             let byteIndex = index >> 3
             let bitIndex = 7 - (index & 7)
@@ -102,7 +102,7 @@ public struct IPRange: Sendable {
     }
 
     public init?(cidr: String) {
-        let parts = cidr.split(separator: "/")
+        let parts = cidr.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count == 2,
             let address = IPAddress(string: String(parts[0])),
             let prefix = Int(parts[1])
@@ -122,6 +122,8 @@ public struct IPRange: Sendable {
     /// Check if address is within this range using efficient prefix comparison.
     @inlinable
     public func contains(_ address: IPAddress) -> Bool {
+        guard (0...start.bitCount).contains(prefixLength) else { return false }
+
         // Check if address types match
         switch (start, address) {
         case (.v4, .v4), (.v6, .v6):
@@ -145,7 +147,7 @@ public struct IPRange: Sendable {
         // Compare remaining bits
         let remainingBits = prefixLength & 7
         if remainingBits > 0 {
-            let mask = UInt8(0xFF << (8 - remainingBits))
+            let mask = UInt8.max << (8 - remainingBits)
             if (startBytes[fullBytes] & mask) != (addrBytes[fullBytes] & mask) {
                 return false
             }

@@ -40,6 +40,14 @@ public enum UltraCompactFormat {
     /// Bump (and update the magic) when the layout changes.
     public static let currentFormatVersion: UInt8 = 2
 
+    // Bound expansion of downloaded artifacts. Allow small, highly repetitive
+    // custom databases and scale the limit with production database size.
+    package static func decodedSizeLimit(compressedBytes: Int) throws -> Int {
+        let (limit, overflow) = compressedBytes.multipliedReportingOverflow(by: 32)
+        guard !overflow else { throw UltraCompactError.decompressionFailed }
+        return max(8 * 1024 * 1024, limit)
+    }
+
     /// Header flag indicating that a version-1 metadata trailer follows the
     /// ASN name table. Released readers ignore this bit and trailing bytes.
     public static let metadataFlag: UInt8 = 1 << 0
@@ -683,16 +691,11 @@ public struct UltraCompactDatabase: Sendable {
         guard !data.isEmpty else {
             throw UltraCompactError.decompressionFailed
         }
-        let (initialBufferSize, initialSizeOverflow) = data.count.multipliedReportingOverflow(by: 8)
-        guard !initialSizeOverflow else {
-            throw UltraCompactError.decompressionFailed
-        }
+        // One extra byte distinguishes an exact fit from a truncated prefix.
+        let limit = try UltraCompactFormat.decodedSizeLimit(compressedBytes: data.count) + 1
+        var bufferSize = data.count * 8
 
-        var bufferSize = initialBufferSize
-        var attempts = 0
-        let maxAttempts = 3
-
-        while attempts < maxAttempts {
+        while true {
             let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
             defer { buffer.deallocate() }
 
@@ -705,21 +708,13 @@ public struct UltraCompactDatabase: Sendable {
                 )
             }
 
-            if decompressedSize > 0 {
+            guard decompressedSize > 0 else { throw UltraCompactError.decompressionFailed }
+            if decompressedSize < bufferSize {
                 return Data(bytes: buffer, count: decompressedSize)
             }
-
-            attempts += 1
-            if attempts < maxAttempts {
-                let (nextBufferSize, sizeOverflow) = bufferSize.multipliedReportingOverflow(by: 2)
-                guard !sizeOverflow else {
-                    throw UltraCompactError.decompressionFailed
-                }
-                bufferSize = nextBufferSize
-            }
+            guard bufferSize < limit else { throw UltraCompactError.decompressionFailed }
+            bufferSize = bufferSize <= limit / 2 ? bufferSize * 2 : limit
         }
-
-        throw UltraCompactError.decompressionFailed
     }
 }
 

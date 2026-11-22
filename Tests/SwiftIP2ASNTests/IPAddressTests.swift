@@ -98,6 +98,23 @@ final class IPAddressTests: XCTestCase {
         XCTAssertFalse(range.contains(ip4))
     }
 
+    func testPartialBytePrefixesAndOutOfBoundsInputs() throws {
+        for (cidr, last, outside) in [
+            ("192.0.2.0/25", "192.0.2.127", "192.0.2.128"),
+            ("2001:db8::/127", "2001:db8::1", "2001:db8::2")
+        ] {
+            let range = try XCTUnwrap(IPRange(cidr: cidr))
+            let address = try XCTUnwrap(IPAddress(string: last))
+            XCTAssertTrue(range.contains(address))
+            XCTAssertFalse(range.contains(try XCTUnwrap(IPAddress(string: outside))))
+            XCTAssertFalse(address.getBit(at: -1))
+            XCTAssertFalse(address.getBit(at: address.bitCount))
+            XCTAssertFalse(IPRange(start: address, prefixLength: -1).contains(address))
+            XCTAssertFalse(IPRange(start: address, prefixLength: address.bitCount + 1).contains(address))
+        }
+        XCTAssertNil(IPRange(cidr: "192.0.2.0//25"))
+    }
+
     func testMixedTypeRangeContains() {
         guard let ipv4Range = IPRange(cidr: "192.168.0.0/16") else { return }
         guard let ipv6Address = IPAddress(string: "2001:db8::1") else { return }

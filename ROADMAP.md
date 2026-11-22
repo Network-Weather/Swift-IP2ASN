@@ -1,15 +1,14 @@
 # SwiftIP2ASN Roadmap
 
-Last reviewed: 2026-08-31
+Last reviewed: 2026-11-22
 
-This roadmap describes the intended direction of SwiftIP2ASN after the 0.5
-provenance release. It is an ordered plan, not a calendar commitment. Minor
-release numbers may change as work is scoped, but correctness and compatibility
-work should land before feature or platform expansion.
+SwiftIP2ASN 0.6.0 focuses on reproducible ULT2
+builds, reliable remote refreshes, and correctness of the public address helpers.
+See [CHANGELOG.md](CHANGELOG.md) for the release notes.
 
 ## Current Baseline
 
-SwiftIP2ASN 0.5.2 provides:
+SwiftIP2ASN 0.6.0 provides:
 
 - offline IPv4 and IPv6 ASN lookups from an embedded database;
 - the ULT2 ultra-compact database format and builder;
@@ -20,12 +19,11 @@ SwiftIP2ASN 0.5.2 provides:
   and observable status;
 - an `ip2asn` command-line tool for bundled lookups, artifact inspection and
   validation, database builds, and benchmarks;
-- weekly embedded-database update automation and reviewed R2 publication; and
+- weekly embedded-database update automation and verified R2 publication; and
 - SwiftPM support for current Apple platforms.
 
-There is no committed feature backlog beyond this document. New work should be
-opened as a GitHub issue and attached to the relevant milestone before
-implementation begins.
+New roadmap work should be opened as a GitHub issue and attached to the
+relevant milestone before implementation begins.
 
 ## Product Direction
 
@@ -52,51 +50,16 @@ Roadmap decisions follow these principles:
 
 ## Delivery Sequence
 
-`0.6 CLI and API completion → 0.7 Linux → 1.0 contract`
+`0.7 Linux → 1.0 contract`
 
-Items are ordered within each milestone. A milestone should satisfy its exit
-criteria before work depending on it is considered complete: metadata builds on
-the hardened parser and transport, typed results build on the metadata decision,
-and Linux support follows the intended long-term API rather than porting symbols
-that are about to be retired.
+### Lookup contract established in 0.6
 
-Reliability hardening and provenance work completed in the 0.4.x and 0.5 lines
-is recorded in `CHANGELOG.md`. Active milestones below contain only remaining
-work.
-
-## Milestone 0.6 — Stabilize the Lookup API
-
-Goal: provide an expressive result API while giving existing callers a clear
-migration path toward 1.0.
-
-### Typed results
-
-`ASNLookupResult` and type-safe `IPAddress` inputs shipped in 0.5. The
-tuple-returning `lookup` API remains available during 0.x because Swift cannot
-overload a method only by return type. The 1.0 migration decision remains part
-of this milestone.
-
-### Address and batch APIs
-
-- [ ] Add a batch lookup API only after measuring its benefit over a caller loop;
-      specify input-order preservation and miss representation.
-
-### Builder and CLI usability
-
-- [ ] Replace whole-file TSV loading with streaming parsing to bound peak memory
-      on large source files.
-- [ ] Produce a build summary containing counts, skipped-row reasons, metadata,
-      and output digest.
-- [ ] Make invalid arguments and malformed input return stable, actionable
-      errors rather than precondition failures.
-
-### Exit criteria
-
-- New applications can use a named, documented result type without tuples.
-- Existing 0.4 lookup source continues to compile throughout the 0.6 line.
-- All result fields have precise semantics backed by stored source data.
-- The builder has bounded input-reading memory and reports rejected records.
-- CLI validation can verify both embedded and downloaded production artifacts.
+Use `lookupResult` for new code. Keep the named result and tuple methods under
+their existing names through 1.0. There is no required migration in 0.6. For
+multiple inputs, `addresses.map { db.lookupResult($0) }` preserves input order
+and represents each miss with `nil`. A dedicated batch API stays in research
+until a representative dual-stack benchmark demonstrates a benefit over this
+caller loop.
 
 ## Milestone 0.7 — Support Server-Side Swift
 
@@ -136,7 +99,7 @@ command-line applications, not only Apple-platform apps.
 Goal: publish a narrow, durable API and compatibility policy suitable for
 long-term adoption.
 
-- [ ] Finalize the typed lookup API and complete announced deprecations.
+- [ ] Confirm the lookup compatibility policy with a clean external consumer.
 - [ ] Decide whether the legacy compressed format stays supported, moves to a
       separate product, or is removed. Record the decision in the migration
       guide and changelog.

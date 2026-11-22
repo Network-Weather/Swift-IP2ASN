@@ -37,7 +37,7 @@ func usage(exitCode: Int32 = 2) -> Never {
           lookup-ultra <db.ultra> <ip>
           bench-ultra <db.ultra> [iterations]
         """
-    print(msg)
+    if exitCode == 0 { print(msg) } else { fputs(msg + "\n", stderr) }
     exit(exitCode)
 }
 
@@ -148,21 +148,9 @@ case .lookupCompressed:
     }
 
 case .benchCompressed:
-    guard args.count >= 2 else { usage() }
-    let dbPath = String(args.dropFirst().first!)
-    let iters = Int(args.dropFirst(2).first ?? "5") ?? 5
-    if iters <= 0 {
-        print("iterations must be > 0")
-        exit(2)
-    }
-    _ = try? CompressedDatabaseFormat.loadCompressed(from: dbPath)  // warmup
-    var timesC: [Double] = []
-    for _ in 0..<iters {
-        let start = Date()
+    benchmark(arguments: Array(args.dropFirst()), label: "Compressed load") { dbPath in
         _ = try CompressedDatabaseFormat.loadCompressed(from: dbPath)
-        timesC.append(Date().timeIntervalSince(start) * 1000)
     }
-    report(times: timesC, label: "Compressed load")
 
 case .buildUltra:
     var positional: [String] = []
@@ -269,7 +257,7 @@ case .buildUltra:
     }
 
     do {
-        try UltraCompactBuilder.createUltraCompact(
+        let rows = try UltraCompactBuilder.build(
             ipv4TSV: v4Path,
             ipv6TSV: v6Path,
             to: outputPath,
@@ -285,6 +273,8 @@ case .buildUltra:
             )
             try manifest.write(to: URL(fileURLWithPath: manifestRequest.path))
         }
+        let inspection = try DatabaseArtifactDiagnostics.inspect(databaseURL: URL(fileURLWithPath: outputPath))
+        try writeJSON(BuildReport(rows: rows, artifact: inspection.artifact, database: inspection.database))
     } catch {
         fputs("Error: \(error)\n", stderr)
         exit(1)
@@ -308,24 +298,19 @@ case .lookupUltra:
     }
 
 case .benchUltra:
-    guard args.count >= 2 else { usage() }
-    let dbPath = String(args.dropFirst().first!)
-    let iters = Int(args.dropFirst(2).first ?? "5") ?? 5
-    if iters <= 0 {
-        print("iterations must be > 0")
-        exit(2)
-    }
-    _ = try? UltraCompactDatabase(path: dbPath)  // warmup
-    var timesU: [Double] = []
-    for _ in 0..<iters {
-        let start = Date()
+    benchmark(arguments: Array(args.dropFirst()), label: "UltraCompact load") { dbPath in
         _ = try UltraCompactDatabase(path: dbPath)
-        timesU.append(Date().timeIntervalSince(start) * 1000)
     }
-    report(times: timesU, label: "UltraCompact load")
 }
 
 // MARK: - Helpers
+struct BuildReport: Encodable {
+    let schemaVersion = 1
+    let rows: UltraCompactBuilder.RowCounts
+    let artifact: DatabaseArtifactDiagnostics.Artifact
+    let database: DatabaseArtifactDiagnostics.Database
+}
+
 struct LookupRequest {
     let ip: String
     let databasePath: String?
@@ -409,6 +394,27 @@ func writeJSON<T: Encodable>(_ value: T) throws {
 func fail(_ error: Error) -> Never {
     fputs("Error: \(error)\n", stderr)
     exit(1)
+}
+
+func benchmark(arguments: [String], label: String, load: (String) throws -> Void) {
+    guard (1...2).contains(arguments.count) else { usage() }
+    let iterations = arguments.count == 2 ? Int(arguments[1]) : 5
+    guard let iterations, iterations > 0 else {
+        fputs("Error: iterations must be a positive integer\n", stderr)
+        exit(2)
+    }
+    do {
+        try load(arguments[0])
+        var times: [Double] = []
+        for _ in 0..<iterations {
+            let start = Date()
+            try load(arguments[0])
+            times.append(Date().timeIntervalSince(start) * 1000)
+        }
+        report(times: times, label: label)
+    } catch {
+        fail(error)
+    }
 }
 
 func report(times: [Double], label: String) {

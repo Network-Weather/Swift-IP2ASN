@@ -520,7 +520,9 @@ public actor RemoteDatabase {
         }
 
         let storedMetadata = loadMetadata()
-        var request = URLRequest(url: remoteURL)
+        // These validators describe our database on disk. Consult the CDN
+        // even if URLSession has a separately cached response for this URL.
+        var request = URLRequest(url: remoteURL, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = "GET"
         if let etag = storedMetadata?.etag {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
@@ -631,7 +633,7 @@ public actor RemoteDatabase {
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
         // Download
-        var request = URLRequest(url: remoteURL)
+        var request = URLRequest(url: remoteURL, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = "GET"
         let (data, response) = try await performRequest(request, operation: "Download")
 

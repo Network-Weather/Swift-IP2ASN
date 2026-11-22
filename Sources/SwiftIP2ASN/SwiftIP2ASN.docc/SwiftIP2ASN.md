@@ -106,7 +106,10 @@ if let result = db.lookupResult(address) {
 
 ``ASNLookupResult`` reports only the BGP-origin ASN and source-provided name. It
 does not represent IP geolocation, legal ownership, or a canonical CIDR prefix.
-Existing tuple-returning lookup methods remain available during the 0.x line.
+The tuple-returning lookup methods remain supported through 1.0. To migrate a
+call site, change `lookup` to `lookupResult` and read the same `asn` and `name`
+fields. For several addresses, use `addresses.map { db.lookupResult($0) }` to
+keep input order, duplicates, and a `nil` at each miss.
 
 ## Topics
 

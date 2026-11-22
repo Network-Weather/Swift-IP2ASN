@@ -25,7 +25,7 @@ Add the following to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.5.2")
+    .package(url: "https://github.com/Network-Weather/swift-ip2asn", from: "0.6.0")
 ]
 ```
 
@@ -129,7 +129,8 @@ if let result = db.lookupResult(address) {
 Results do not claim IP geolocation, address ownership, or canonical CIDR
 boundaries. The source stores exact inclusive ranges, but matched boundaries are
 deferred until the library has a dedicated non-CIDR range type. Existing
-tuple-returning `lookup` and `lookupV6` methods remain available during 0.x.
+tuple-returning `lookup` and `lookupV6` methods remain supported through 1.0. For multiple inputs,
+`addresses.map { db.lookupResult($0) }` preserves input order and misses.
 
 The static `IP2ASN` API maintains one active remote configuration. The most
 recent `remote(bundledPath:)` call selects the configuration used by `refresh()`,
@@ -224,6 +225,22 @@ Pass only the v4 TSV for an IPv4-only database. Omit both metadata options to
 produce the legacy ULT2 layout. Supplying the same normalized TSV inputs,
 generation timestamp, and source identifier produces identical database bytes
 and the same build identifier.
+
+Starting in 0.6, `build-ultra` writes a JSON report to stdout. The
+`rows.total` count includes blank and unrouted (ASN 0) rows. Subtract
+`rows.blank` and `rows.unrouted` to get `database.totalRangeCount`.
+`artifact.sha256` identifies the compressed output. The builder streams UTF-8
+rows up to 1 MiB, accepts LF or CRLF, and sorts the accepted ranges in memory.
+Malformed rows and overlapping routed ranges stop the build with a source
+path and line number. Custom TSVs that previously relied on silent skips may
+need correcting.
+
+On a local arm64 macOS release build (Swift 6.4.2), building the November 16
+dual-stack inputs with the manifest’s generation time and source took 1.94 s
+and 134 MiB peak RSS, compared with 14.30 s and 193 MiB on the pre-0.6 main
+branch (`26847e2`). Both produced the same compressed bytes. These are single
+runs of `/usr/bin/time -l .build/release/ip2asn build-ultra` with the same
+arguments, excluding manifest generation.
 
 Automated database updates also write `ip2asn.manifest.json`. Its versioned JSON
 schema records source URLs, SHA-256 digests of the downloaded archives and
@@ -337,7 +354,8 @@ All database types are `Sendable` and safe for concurrent access:
 
 The library uses data from [iptoasn.com](https://iptoasn.com), which aggregates
 BGP routing information from global route collectors. The repository checks for
-updates weekly; reviewed database and manifest pairs are then published to
+updates weekly. When either source TSV changes, the workflow builds, validates,
+and publishes the new database and manifest to
 `pkgs.networkweather.com`.
 
 ## Requirements
@@ -402,8 +420,8 @@ https://github.com/Network-Weather/swift-ip2asn
 
 ## Documents
 
-- [ROADMAP.md](ROADMAP.md): product direction, principles, and the ordered milestones toward 1.0. (updated 2026-11-02; update when: a milestone ships or its scope changes)
-- [CHANGELOG.md](CHANGELOG.md): user-visible changes in each tagged release. (updated 2026-11-02; update when: a release is tagged)
-- [CONTRIBUTING.md](CONTRIBUTING.md): development setup, code and test style, PR process, and the automated database publication and rollback. (updated 2026-11-02; update when: the build, test, or publication procedure changes)
+- [ROADMAP.md](ROADMAP.md): product direction, principles, and the ordered milestones toward 1.0. (updated 2026-11-21; update when: a milestone ships or its scope changes)
+- [CHANGELOG.md](CHANGELOG.md): user-visible changes in each tagged release. (updated 2026-11-21; update when: a release is tagged)
+- [CONTRIBUTING.md](CONTRIBUTING.md): development setup, code and test style, PR process, and the automated database publication and rollback. (updated 2026-11-21; update when: the build, test, or publication procedure changes)
 - [CLAUDE.md](CLAUDE.md): build commands, module layout, formats, and coding patterns for agents working in this repo. (updated 2026-08-31; update when: a module, format, or build command is added or removed)
-- [SwiftIP2ASN.docc/SwiftIP2ASN.md](Sources/SwiftIP2ASN/SwiftIP2ASN.docc/SwiftIP2ASN.md): DocC landing page for the library's API documentation. (updated 2026-08-31; update when: the public API surface changes)
+- [SwiftIP2ASN.docc/SwiftIP2ASN.md](Sources/SwiftIP2ASN/SwiftIP2ASN.docc/SwiftIP2ASN.md): DocC landing page for the library's API documentation. (updated 2026-11-21; update when: the public API surface changes)
