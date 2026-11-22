@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 @_spi(IP2ASNDataPrep) import SwiftIP2ASN
 
@@ -113,7 +114,15 @@ public struct DatabaseBuildManifest: Codable, Equatable, Sendable {
     }
 
     private static func artifact(at url: URL) throws -> Artifact {
-        artifact(for: try Data(contentsOf: url))
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hash = SHA256()
+        var byteCount = 0
+        while let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
+            hash.update(data: chunk)
+            byteCount += chunk.count
+        }
+        return Artifact(byteCount: byteCount, sha256: hash.finalize().map { String(format: "%02x", $0) }.joined())
     }
 
     private static func artifact(for data: Data) -> Artifact {

@@ -136,6 +136,29 @@ struct DatabaseArtifactDiagnosticsTests {
         #expect(object["manifestValidated"] as? Bool == true)
     }
 
+    @Test("CLI build reports reconcile row counts and hashes with inspect")
+    func cliBuildReport() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let input = fixture.directory.appendingPathComponent("ip2asn-v4.tsv")
+        let build = try runCLI(["build-ultra", input.path, fixture.databaseURL.path])
+        #expect(build.status == 0)
+        let report = try #require(JSONSerialization.jsonObject(with: Data(build.stdout.utf8)) as? NSDictionary)
+        #expect(report["rows"] as? [String: Int] == ["total": 1, "blank": 0, "unrouted": 0])
+        let inspect = try runCLI(["inspect", fixture.databaseURL.path])
+        let metadata = try #require(JSONSerialization.jsonObject(with: Data(inspect.stdout.utf8)) as? NSDictionary)
+        #expect(report["artifact"] as? NSDictionary == metadata["artifact"] as? NSDictionary)
+        #expect(report["database"] as? NSDictionary == metadata["database"] as? NSDictionary)
+        for command in ["bench-compressed", "bench-ultra"] {
+            let badCount = try runCLI([command, "missing", "oops"])
+            #expect(badCount.status == 2)
+            #expect(badCount.stderr.contains("positive integer"))
+            let missing = try runCLI([command, fixture.directory.appendingPathComponent("missing").path])
+            #expect(missing.status == 1)
+            #expect(missing.stderr.contains("Error:"))
+        }
+    }
+
     private func expectSingleASNLine(
         _ output: String,
         asn: UInt32,

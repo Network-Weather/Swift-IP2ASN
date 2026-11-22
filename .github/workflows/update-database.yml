@@ -6,15 +6,19 @@ on:
     - cron: '0 6 * * 1'
   workflow_dispatch:
     inputs:
+      force_rebuild:
+        description: Rebuild even when both source TSV digests match the bundled manifest
+        required: false
+        default: false
+        type: boolean
       allow_large_change:
         description: Allow database size or range counts to change by more than 20%
         required: false
         default: false
         type: boolean
 
-# The PR is opened with GITHUB_TOKEN, which does not trigger ci.yml on its own,
-# so this workflow dispatches CI on the PR head (workflow_dispatch is the one
-# event GITHUB_TOKEN may trigger), waits for it, merges, and publishes the
+# Token-created PR runs can require approval. Dispatch CI on the PR head
+# explicitly, wait for that run, merge, and publish the
 # merged database to the CDN. Every gate is machine-run; recovery from a bad
 # publish is republishing the previous commit's pair (see CONTRIBUTING.md).
 permissions:
@@ -31,9 +35,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Build CLI
-        run: swift build -c release
-
       - name: Download latest TSVs (v4 + v6)
         run: |
           curl --fail --silent --show-error --location \
@@ -45,7 +46,28 @@ jobs:
           gzip -dc /tmp/ip2asn-v4.tsv.gz > /tmp/ip2asn-v4.tsv
           gzip -dc /tmp/ip2asn-v6.tsv.gz > /tmp/ip2asn-v6.tsv
 
+      - name: Compare normalized source bytes with bundled manifest
+        id: inputs
+        env:
+          FORCE_REBUILD: ${{ inputs.force_rebuild }}
+        run: |
+          v4=$(shasum -a 256 /tmp/ip2asn-v4.tsv | cut -d' ' -f1)
+          v6=$(shasum -a 256 /tmp/ip2asn-v6.tsv | cut -d' ' -f1)
+          manifest=Sources/SwiftIP2ASN/Resources/ip2asn.manifest.json
+          if [[ "$FORCE_REBUILD" != "true" ]] && jq -e --arg v4 "$v4" --arg v6 "$v6" \
+            '[.sources[].builderInput.sha256] == [$v4, $v6]' "$manifest" >/dev/null; then
+            echo "Both source TSVs match the bundled database."
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build CLI
+        if: steps.inputs.outputs.rebuild == 'true'
+        run: swift build -c release
+
       - name: Build database and provenance manifest
+        if: steps.inputs.outputs.rebuild == 'true'
         run: |
           generated_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           .build/release/ip2asn build-ultra \
@@ -60,6 +82,7 @@ jobs:
             Sources/SwiftIP2ASN/Resources/ip2asn.ultra
 
       - name: Check artifact sanity thresholds
+        if: steps.inputs.outputs.rebuild == 'true'
         env:
           ALLOW_LARGE_CHANGE: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_large_change }}
         run: |
@@ -108,13 +131,15 @@ jobs:
           else
             OLD_SIZE=$(git show HEAD:"$database" | wc -c | tr -d ' ')
             NEW_SIZE=$(wc -c < "$database" | tr -d ' ')
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "old_size=$OLD_SIZE" >> "$GITHUB_OUTPUT"
-            echo "new_size=$NEW_SIZE" >> "$GITHUB_OUTPUT"
-            echo "output_sha=$(jq -r '.output.artifact.sha256' "$manifest")" >> "$GITHUB_OUTPUT"
-            echo "build_id=$(jq -r '.output.buildIdentifier' "$manifest")" >> "$GITHUB_OUTPUT"
-            echo "ipv4_count=$(jq -r '.output.ipv4RangeCount' "$manifest")" >> "$GITHUB_OUTPUT"
-            echo "ipv6_count=$(jq -r '.output.ipv6RangeCount' "$manifest")" >> "$GITHUB_OUTPUT"
+            {
+              echo "changed=true"
+              echo "old_size=$OLD_SIZE"
+              echo "new_size=$NEW_SIZE"
+              echo "output_sha=$(jq -r '.output.artifact.sha256' "$manifest")"
+              echo "build_id=$(jq -r '.output.buildIdentifier' "$manifest")"
+              echo "ipv4_count=$(jq -r '.output.ipv4RangeCount' "$manifest")"
+              echo "ipv6_count=$(jq -r '.output.ipv6RangeCount' "$manifest")"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run tests

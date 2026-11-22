@@ -190,6 +190,55 @@ struct UltraCompactBuilderTests {
         }
     }
 
+    @Test("Streaming reads preserve split UTF-8, CRLF, blank rows, and the final unterminated row")
+    func streamingRows() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let input = directory.appendingPathComponent("ranges.tsv")
+        let output = directory.appendingPathComponent("out.ultra")
+        let prefix = "1.1.1.1\t1.1.1.1\tAS42\t\t"
+        let name = String(repeating: "x", count: 65_535 - prefix.utf8.count) + "é"
+        try (prefix + name + "\r\n\r\n1.1.1.2\t1.1.1.2\t0\tZZ\tUnrouted")
+            .write(to: input, atomically: true, encoding: .utf8)
+        let rows = try UltraCompactBuilder.build(ipv4TSV: input.path, ipv6TSV: nil, to: output.path, metadata: nil)
+        #expect(rows.total == 3)
+        #expect(rows.blank == 1)
+        #expect(rows.unrouted == 1)
+        let database = try UltraCompactDatabase(path: output.path)
+        #expect(database.lookupResult("1.1.1.1") == ASNLookupResult(asn: 42, name: name))
+    }
+
+    @Test("A failed build identifies the source row and preserves an existing output")
+    func rejectsInvalidSource() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let input = directory.appendingPathComponent("ranges.tsv")
+        let output = directory.appendingPathComponent("out.ultra")
+        let original = Data("previous output".utf8)
+        try original.write(to: output)
+        for (row, reason) in [
+            ("1.0.0.256\t1.0.1.0\t42\tZZ\tExample", "endpoint"),
+            ("1.0.0.2\t1.0.0.1\t42\tZZ\tExample", "ends before"),
+            ("1.0.0.1\t1.0.0.2\t4AS2\tZZ\tExample", "invalid ASN"),
+            ("1.0.0.1\t1.0.0.2\t42\tZZ\tExample", "overlaps"),
+            ("1.0.0.1\t1.0.0.2", "columns"),
+            (String(repeating: "x", count: 1024 * 1024 + 1), "exceeds")
+        ] {
+            try ("1.0.0.0\t1.0.0.1\t17\tZZ\tFirst\n" + row)
+                .write(to: input, atomically: true, encoding: .utf8)
+            #expect {
+                try UltraCompactBuilder.createUltraCompact(from: input.path, to: output.path)
+            } throws: { error in
+                String(describing: error).contains("\(input.path):2:")
+                    && String(describing: error).contains(reason)
+            }
+            #expect(try Data(contentsOf: output) == original)
+        }
+        #expect(throws: TSVInputError.self) {
+            try UltraCompactBuilder.createUltraCompact(ipv4TSV: nil, ipv6TSV: nil, to: output.path)
+        }
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(

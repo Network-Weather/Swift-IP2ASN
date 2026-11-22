@@ -53,66 +53,57 @@ public enum UltraCompactBuilder {
         to outputPath: String,
         metadata: UltraCompactBuildMetadata? = nil
     ) throws {
-        precondition(ipv4TSV != nil || ipv6TSV != nil, "Need at least one TSV input")
+        _ = try build(ipv4TSV: ipv4TSV, ipv6TSV: ipv6TSV, to: outputPath, metadata: metadata)
+    }
 
-        var v4Ranges: [(start: UInt32, end: UInt32, asn: UInt32)] = []
-        var v6Ranges: [(startHi: UInt64, startLo: UInt64, endHi: UInt64, endLo: UInt64, asn: UInt32)] = []
+    package struct RowCounts: Encodable {
+        var total = 0
+        var blank = 0
+        var unrouted = 0
+    }
+
+    package static func build(
+        ipv4TSV: String?, ipv6TSV: String?, to outputPath: String,
+        metadata: UltraCompactBuildMetadata?
+    ) throws -> RowCounts {
+        guard ipv4TSV != nil || ipv6TSV != nil else {
+            throw TSVInputError("Provide at least one IPv4 or IPv6 TSV input")
+        }
+
+        var counts = RowCounts()
         var asnNames: [UInt32: String] = [:]
-
-        if let v4Path = ipv4TSV {
-            let lines = try String(contentsOfFile: v4Path).split(separator: "\n")
-            for line in lines {
-                let f = line.split(separator: "\t").map(String.init)
-                guard f.count >= 5,
-                    let s = ipv4ToUInt32(f[0]),
-                    let e = ipv4ToUInt32(f[1])
-                else { continue }
-                let asnString = f[2].replacingOccurrences(of: "AS", with: "")
-                guard let a = UInt32(asnString), a != 0 else { continue }
-                v4Ranges.append((s, e, a))
-                if asnNames[a] == nil { asnNames[a] = f[4] }
-            }
-            v4Ranges.sort { $0.start < $1.start }
-        }
-
-        if let v6Path = ipv6TSV {
-            let lines = try String(contentsOfFile: v6Path).split(separator: "\n")
-            for line in lines {
-                let f = line.split(separator: "\t").map(String.init)
-                guard f.count >= 5,
-                    let s = parseIPv6ToPair(f[0]),
-                    let e = parseIPv6ToPair(f[1])
-                else { continue }
-                let asnString = f[2].replacingOccurrences(of: "AS", with: "")
-                guard let a = UInt32(asnString), a != 0 else { continue }
-                v6Ranges.append((s.hi, s.lo, e.hi, e.lo, a))
-                if asnNames[a] == nil { asnNames[a] = f[4] }
-            }
-            v6Ranges.sort {
-                if $0.startHi != $1.startHi { return $0.startHi < $1.startHi }
-                return $0.startLo < $1.startLo
-            }
-        }
+        let v4Ranges = try readRanges(
+            path: ipv4TSV, family: "IPv4", parse: parseIPv4ToUInt32, less: (<),
+            names: &asnNames, counts: &counts
+        )
+        let v6Ranges = try readRanges(
+            path: ipv6TSV, family: "IPv6", parse: parseIPv6ToPair, less: (<),
+            names: &asnNames, counts: &counts
+        )
+        guard let v4Count = UInt32(exactly: v4Ranges.count),
+            let v6Count = UInt32(exactly: v6Ranges.count),
+            let nameCount = UInt32(exactly: asnNames.count)
+        else { throw TSVInputError("Range or name count exceeds the ULT2 format limit") }
 
         var data = Data()
         data.append(contentsOf: "ULT2".utf8)
         data.append(UltraCompactFormat.currentFormatVersion)  // 1B format version
         data.append(metadata == nil ? 0 : UltraCompactFormat.metadataFlag)
-        data.append(uint32LE(UInt32(v4Ranges.count)))
-        data.append(uint32LE(UInt32(v6Ranges.count)))
-        data.append(uint32LE(UInt32(asnNames.count)))
+        data.append(uint32LE(v4Count))
+        data.append(uint32LE(v6Count))
+        data.append(uint32LE(nameCount))
 
         for r in v4Ranges {
             data.append(uint32BE(r.start))
-            data.append(encodeVarint(r.end &- r.start))
+            data.append(encodeVarint(r.end - r.start))
             data.append(encodeVarint(r.asn))
         }
 
         for r in v6Ranges {
-            data.append(uint64BE(r.startHi))
-            data.append(uint64BE(r.startLo))
-            data.append(uint64BE(r.endHi))
-            data.append(uint64BE(r.endLo))
+            data.append(uint64BE(r.start.hi))
+            data.append(uint64BE(r.start.lo))
+            data.append(uint64BE(r.end.hi))
+            data.append(uint64BE(r.end.lo))
             data.append(encodeVarint(r.asn))
         }
 
@@ -128,15 +119,60 @@ public enum UltraCompactBuilder {
         }
 
         let compressed = try zlibCompress(data)
-        try compressed.write(to: URL(fileURLWithPath: outputPath))
+        let limit = try UltraCompactFormat.decodedSizeLimit(compressedBytes: compressed.count)
+        guard data.count <= limit else {
+            throw TSVInputError("Encoded database exceeds the reader's decoded size limit of \(limit) bytes")
+        }
+        try compressed.write(to: URL(fileURLWithPath: outputPath), options: .atomic)
+        return counts
     }
 
     // MARK: helpers
 
-    private static func ipv4ToUInt32(_ ip: String) -> UInt32? {
-        let p = ip.split(separator: ".").compactMap { UInt32($0) }
-        guard p.count == 4 else { return nil }
-        return (p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]
+    private struct RangeRecord<Address> {
+        let start: Address
+        let end: Address
+        let asn: UInt32
+        let line: Int
+    }
+
+    private static func readRanges<Address>(
+        path: String?, family: String, parse: (String) -> Address?, less: (Address, Address) -> Bool,
+        names: inout [UInt32: String], counts: inout RowCounts
+    ) throws -> [RangeRecord<Address>] {
+        guard let path else { return [] }
+        var ranges: [RangeRecord<Address>] = []
+        try forEachTSVLine(path: path) { line, number in
+            counts.total += 1
+            if line.isEmpty {
+                counts.blank += 1
+                return
+            }
+            let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
+            guard fields.count >= 5 else { throw TSVInputError("\(path):\(number): expected five TSV columns") }
+            guard let start = parse(String(fields[0])), let end = parse(String(fields[1])) else {
+                throw TSVInputError("\(path):\(number): invalid \(family) range endpoint")
+            }
+            guard !less(end, start) else {
+                throw TSVInputError("\(path):\(number): \(family) range ends before it starts")
+            }
+            let digits = fields[2].hasPrefix("AS") ? fields[2].dropFirst(2) : fields[2]
+            guard digits.utf8.allSatisfy({ (48...57).contains($0) }), let asn = UInt32(digits) else {
+                throw TSVInputError("\(path):\(number): invalid ASN")
+            }
+            if asn == 0 {
+                counts.unrouted += 1
+                return
+            }
+            ranges.append(RangeRecord(start: start, end: end, asn: asn, line: number))
+            if names[asn] == nil { names[asn] = String(fields[4]) }
+        }
+
+        ranges.sort { less($0.start, $1.start) }
+        for (previous, next) in zip(ranges, ranges.dropFirst()) where !less(previous.end, next.start) {
+            throw TSVInputError("\(path):\(next.line): \(family) range overlaps line \(previous.line)")
+        }
+        return ranges
     }
 
     private static func uint32LE(_ v: UInt32) -> Data { withUnsafeBytes(of: v.littleEndian) { Data($0) } }
